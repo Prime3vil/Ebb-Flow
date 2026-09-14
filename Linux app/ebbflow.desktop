@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Ebb&Flow
+GenericName=Global Oceanic Tide Reconnaissance & Solunar Ephemeris
+Comment=Tactical marine tide telemetry, solunar activity forecasts, and tidal curves
+Exec=/home/prime3vil/.local/bin/ebbflow %U
+Icon=ebbflow
+Terminal=false
+Categories=Science;Geography;Education;Utility;
+StartupWMClass=ebbflow
+Keywords=tides;ocean;marine;solunar;fishing;currents;weather;coastal;

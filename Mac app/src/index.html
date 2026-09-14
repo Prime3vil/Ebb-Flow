@@ -1,0 +1,1727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Ebb&Flow // Oceanic Tide Reconnaissance</title>
+  
+  <link rel="stylesheet" href="leaflet/leaflet.css" />
+  <link rel="stylesheet" href="leaflet/MarkerCluster.css" />
+  <link rel="stylesheet" href="leaflet/MarkerCluster.Default.css" />
+  <link rel="stylesheet" href="oceanic.css" />
+</head>
+<body>
+
+  <!-- Full Screen Geospatial Map -->
+  <div id="map"></div>
+
+  <!-- Top Tactical HUD (Protected with Safe Area Insets) -->
+  <header class="hud-top-bar">
+    <div class="hud-brand glass-panel hud-interactive" id="brandBtn">
+      <div class="hud-logo-icon">🌊</div>
+      <div class="hud-title-wrap">
+        <span class="hud-app-title">EBB & FLOW</span>
+        <span class="hud-station-count" id="stationCountDisplay">32,013 STATIONS</span>
+      </div>
+    </div>
+
+    <div class="hud-actions hud-interactive">
+      <button class="hud-btn" id="layerToggleBtn" title="Toggle NOAA Nautical Chart / Satellite">⚓</button>
+      <button class="hud-btn" id="homeQuickBtn" title="Jump to Home Base">⌂</button>
+      <button class="hud-btn" id="searchTriggerBtn" title="Search Global Tide Stations">🔍</button>
+      <button class="hud-btn" id="savedTriggerBtn" title="Quick Access & Nicknames">🔖</button>
+    </div>
+  </header>
+
+  <!-- Bottom Telemetry Slide-Up Drawer (Auto-opens on tap, swipe up to open, swipe down to collapse) -->
+  <section class="telemetry-drawer glass-panel" id="telemetryDrawer">
+    <div class="drawer-drag-handle-wrap" id="drawerDragHandleWrap">
+      <div class="drawer-drag-handle"></div>
+    </div>
+
+    <!-- Station Summary Header -->
+    <div class="telemetry-header" id="drawerHeaderSummary">
+      <div class="station-info-col">
+        <div class="station-nickname-row">
+          <h2 class="station-title" id="stationTitle">Loading Station...</h2>
+          <span class="badge-home" id="homeBadge" style="display:none;">HOME</span>
+        </div>
+        <div class="station-sub" id="stationSub">Select a coastal coordinate</div>
+      </div>
+
+      <div class="live-tide-badge">
+        <span class="live-water-level" id="liveWaterLevel">--.- FT</span>
+        <span class="live-tendency" id="liveTendency">
+          <span id="tendencyArrow">▲</span> <span id="tendencyText">CALCULATING</span>
+        </span>
+      </div>
+
+      <button class="drawer-close-btn" id="drawerMinimizeBtn" title="Minimize Drawer">✕</button>
+    </div>
+
+    <!-- COMPLETE 24-HOUR TIDE TABLE FOR THE DAY (Scrollable between all days of the month) -->
+    <div class="tide-table-card">
+      <div class="tide-table-title">
+        <span id="tideTableTitleText">TODAY'S TIDE TABLE</span>
+        <span id="tideTableDate" style="color:var(--text-secondary); font-family:var(--font-mono); font-size:10px;"></span>
+      </div>
+      <!-- Horizontal Day Strip (Selector Pills) -->
+      <div class="tide-days-strip" id="tideDaysStrip"></div>
+      <!-- Horizontally Scrollable Days Carousel -->
+      <div class="tide-days-slider" id="tideDaysSlider"></div>
+    </div>
+
+    <!-- Dynamic Waveform Canvas -->
+    <div class="wave-card">
+      <div class="wave-card-top">
+        <span>24H ASTRONOMICAL TIDE WAVEFORM</span>
+        <span class="wave-realtime-clock" id="realtimeClock">--:--:--</span>
+      </div>
+      <canvas id="tideWaveCanvas"></canvas>
+    </div>
+
+    <!-- Live Telemetry & Ephemeris Stats Grid -->
+    <div class="telemetry-grid">
+      <div class="stat-box">
+        <span class="stat-label">NEXT HIGH WATER</span>
+        <span class="stat-value" id="nextHighTime">--:--</span>
+        <span class="stat-subtext" id="nextHighCountdown">--h --m</span>
+      </div>
+
+      <div class="stat-box">
+        <span class="stat-label">NEXT LOW WATER</span>
+        <span class="stat-value" id="nextLowTime">--:--</span>
+        <span class="stat-subtext" id="nextLowCountdown">--h --m</span>
+      </div>
+
+      <div class="stat-box">
+        <span class="stat-label">LUNAR PHASE</span>
+        <span class="stat-value" id="lunarPhaseName">🌕 Full Moon</span>
+        <span class="stat-subtext" id="lunarIllum">100% Illum • Age 14.8d</span>
+      </div>
+
+      <div class="stat-box">
+        <span class="stat-label">SOLUNAR COEFFICIENT</span>
+        <span class="stat-value" id="solunarCoef">95 / 118</span>
+        <span class="stat-subtext" id="solunarActivity">VERY HIGH ACTIVITY</span>
+      </div>
+
+      <div class="stat-box">
+        <span class="stat-label">SUNRISE / SUNSET</span>
+        <span class="stat-value" id="sunTimesDisplay">06:45 AM / 07:22 PM</span>
+        <span class="stat-subtext" style="color:var(--bio-gold);">DAYLIGHT ALMANAC</span>
+      </div>
+
+      <div class="stat-box">
+        <span class="stat-label">TIDAL RANGE</span>
+        <span class="stat-value" id="tidalRangeDisplay">3.8 FT</span>
+        <span class="stat-subtext">MAX SPRING AMPLITUDE</span>
+      </div>
+    </div>
+
+    <!-- Drawer Action Bar -->
+    <div class="drawer-actions-row">
+      <button class="action-btn-main" id="openExternalBtn">
+        <span>VIEW FULL TELEMETRY</span>
+        <span>↗</span>
+      </button>
+
+      <button class="action-btn-sec" id="setHomeBtn" title="Set as Home Station">
+        <span id="setHomeIcon">★</span> <span id="setHomeText">Set Home</span>
+      </button>
+
+      <button class="action-btn-sec" id="toggleSaveBtn" title="Save / Bookmark Station">
+        <span id="toggleSaveIcon">🔖</span>
+      </button>
+
+      <button class="action-btn-sec" id="editNicknameBtn" title="Edit Custom Nickname">
+        <span>✏️</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- Global Search Modal -->
+  <div class="modal-overlay" id="searchModal">
+    <div class="modal-sheet glass-panel">
+      <div class="modal-header">
+        <h3 class="modal-title"><span>🔍</span> Search Global Tide Stations</h3>
+        <button class="modal-close-btn" id="closeSearchModal">✕</button>
+      </div>
+
+      <div class="search-input-wrap">
+        <span class="search-icon">⚲</span>
+        <input type="text" class="search-input" id="searchInput" placeholder="Search by name, region, or country..." autocomplete="off" />
+      </div>
+
+      <div class="results-list" id="searchResultsList"></div>
+    </div>
+  </div>
+
+  <!-- Quick Access & Nicknames Drawer Modal -->
+  <div class="modal-overlay" id="savedModal">
+    <div class="modal-sheet glass-panel">
+      <div class="modal-header">
+        <h3 class="modal-title"><span>🔖</span> Quick Access & Nicknames</h3>
+        <button class="modal-close-btn" id="closeSavedModal">✕</button>
+      </div>
+
+      <div class="results-list" id="savedResultsList"></div>
+    </div>
+  </div>
+
+  <!-- Nickname Editor Modal -->
+  <div class="modal-overlay" id="nicknameModal">
+    <div class="modal-sheet glass-panel" style="margin: auto 20px;">
+      <div class="modal-header">
+        <h3 class="modal-title"><span>✏️</span> Custom Nickname</h3>
+        <button class="modal-close-btn" id="closeNicknameModal">✕</button>
+      </div>
+
+      <p style="font-size:12px; color:var(--text-secondary);" id="nicknamePromptText">
+        Assign a personalized nickname for this tide station:
+      </p>
+
+      <input type="text" class="nickname-input" id="nicknameInput" placeholder="e.g., Secret Break, Weekend Pier, Home Marina" maxlength="40" />
+
+      <div class="drawer-actions-row" style="margin-top:10px;">
+        <button class="action-btn-main" id="saveNicknameBtn">Save Nickname</button>
+        <button class="action-btn-sec" id="clearNicknameBtn">Reset to Default</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Core Scripts -->
+  <script src="leaflet/leaflet.js"></script>
+  <script src="leaflet/leaflet.markercluster.js"></script>
+  <script src="tides_data.js"></script>
+  <script src="tide_engine.js"></script>
+  <script src="quick_access.js"></script>
+
+  <script>
+    (function() {
+      let map = null;
+      let clusterGroup = null;
+      let currentStation = null;
+      let stationMarkerMap = new Map();
+      let activeMarker = null;
+      let wavePhase = 0;
+      let currentWaveSamples = [];
+      let currentWaveExtrema = [];
+      let currentStationLiveData = null;
+      let currentLiveDays = [];
+      let currentActiveDayIndex = 0;
+      let isProgrammaticScroll = false;
+      let scrollDebounceTimer = null;
+
+      // DOM Elements
+      const stationTitleEl = document.getElementById("stationTitle");
+      const stationSubEl = document.getElementById("stationSub");
+      const homeBadgeEl = document.getElementById("homeBadge");
+      const liveWaterLevelEl = document.getElementById("liveWaterLevel");
+      const liveTendencyEl = document.getElementById("liveTendency");
+      const tendencyArrowEl = document.getElementById("tendencyArrow");
+      const tendencyTextEl = document.getElementById("tendencyText");
+      const nextHighTimeEl = document.getElementById("nextHighTime");
+      const nextHighCountdownEl = document.getElementById("nextHighCountdown");
+      const nextLowTimeEl = document.getElementById("nextLowTime");
+      const nextLowCountdownEl = document.getElementById("nextLowCountdown");
+      const lunarPhaseNameEl = document.getElementById("lunarPhaseName");
+      const lunarIllumEl = document.getElementById("lunarIllum");
+      const solunarCoefEl = document.getElementById("solunarCoef");
+      const solunarActivityEl = document.getElementById("solunarActivity");
+      const sunTimesDisplayEl = document.getElementById("sunTimesDisplay");
+      const tidalRangeDisplayEl = document.getElementById("tidalRangeDisplay");
+      const realtimeClockEl = document.getElementById("realtimeClock");
+      const telemetryDrawer = document.getElementById("telemetryDrawer");
+      const waveCanvas = document.getElementById("tideWaveCanvas");
+      const tideTableTitleTextEl = document.getElementById("tideTableTitleText");
+      const tideTableDateEl = document.getElementById("tideTableDate");
+      const tideDaysStripEl = document.getElementById("tideDaysStrip");
+      const tideDaysSliderEl = document.getElementById("tideDaysSlider");
+
+      // Modals
+      const searchModal = document.getElementById("searchModal");
+      const savedModal = document.getElementById("savedModal");
+      const nicknameModal = document.getElementById("nicknameModal");
+      const searchInput = document.getElementById("searchInput");
+      const searchResultsList = document.getElementById("searchResultsList");
+      const savedResultsList = document.getElementById("savedResultsList");
+      const nicknameInput = document.getElementById("nicknameInput");
+
+      // Buttons
+      const homeQuickBtn = document.getElementById("homeQuickBtn");
+      const searchTriggerBtn = document.getElementById("searchTriggerBtn");
+      const savedTriggerBtn = document.getElementById("savedTriggerBtn");
+      const setHomeBtn = document.getElementById("setHomeBtn");
+      const toggleSaveBtn = document.getElementById("toggleSaveBtn");
+      const editNicknameBtn = document.getElementById("editNicknameBtn");
+      const openExternalBtn = document.getElementById("openExternalBtn");
+      const drawerMinimizeBtn = document.getElementById("drawerMinimizeBtn");
+
+      /**
+       * Initialize Map with Reliable ArcGIS Layers (from CCTV & SURFsUP) + Oceanic Theme Filter
+       */
+      function initMap() {
+        map = L.map("map", {
+          zoomControl: false,
+          attributionControl: false,
+          doubleClickZoom: true,
+          zoomDelta: 1,
+          zoomSnap: 1,
+          minZoom: 2.5,
+          maxZoom: 18,
+          worldCopyJump: true,
+          maxBounds: [[-85, -Infinity], [85, Infinity]],
+          maxBoundsViscosity: 1.0,
+          preferCanvas: true,
+          inertia: true,
+          inertiaDeceleration: 3000
+        });
+
+        // Ensure smooth continuous rotation around globe without losing markers
+        map.on("moveend", function() {
+          const center = map.getCenter();
+          if (center.lng > 180 || center.lng < -180) {
+            const wrappedLng = ((center.lng + 180) % 360 + 360) % 360 - 180;
+            map.panTo([center.lat, wrappedLng], { animate: false });
+          }
+        });
+
+        // Layer 1: Oceanic Satellite
+        const satLayer = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+          maxNativeZoom: 18,
+          maxZoom: 19,
+          className: "oceanic-imagery",
+          updateWhenIdle: true,
+          updateWhenZooming: false,
+          keepBuffer: 3
+        });
+
+        const labelLayer = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
+          maxNativeZoom: 18,
+          maxZoom: 19,
+          opacity: 0.95,
+          className: "oceanic-labels",
+          updateWhenIdle: true,
+          updateWhenZooming: false,
+          keepBuffer: 3
+        });
+
+        // Layer 2: Official NOAA ENC Nautical Chart Layers (from nauticalcharts.noaa.gov)
+        const noaaOceanBase = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}", {
+          maxNativeZoom: 16,
+          maxZoom: 19,
+          updateWhenIdle: true,
+          keepBuffer: 3
+        });
+
+        const noaaEncLayer = L.tileLayer.wms("https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/ENCOnline/MapServer/exts/MaritimeChartService/WMSServer", {
+          layers: '0,1,2,3,4,5,6,7',
+          format: 'image/png',
+          transparent: true,
+          version: '1.1.1',
+          maxZoom: 19,
+          attribution: 'NOAA Office of Coast Survey'
+        });
+
+        window.mapLayers = {
+          sat: [satLayer, labelLayer],
+          nautical: [noaaOceanBase, noaaEncLayer]
+        };
+
+        // Determine default mode (defaults to sat, or nautical if in nauti-test mode)
+        const isNautiDefault = false;
+        let currentMode = isNautiDefault ? "nautical" : "sat";
+
+        function setLayerMode(mode) {
+          currentMode = mode;
+          if (mode === "nautical") {
+            map.removeLayer(satLayer);
+            map.removeLayer(labelLayer);
+            noaaOceanBase.addTo(map);
+            noaaEncLayer.addTo(map);
+            document.getElementById("layerToggleBtn").textContent = "🛰️";
+            document.getElementById("layerToggleBtn").title = "Switch to Oceanic Satellite View";
+          } else {
+            map.removeLayer(noaaOceanBase);
+            map.removeLayer(noaaEncLayer);
+            satLayer.addTo(map);
+            labelLayer.addTo(map);
+            document.getElementById("layerToggleBtn").textContent = "⚓";
+            document.getElementById("layerToggleBtn").title = "Switch to NOAA Nautical Charts";
+          }
+        }
+
+        setLayerMode(currentMode);
+
+        document.getElementById("layerToggleBtn").addEventListener("click", function() {
+          setLayerMode(currentMode === "sat" ? "nautical" : "sat");
+        });
+
+        // Custom MarkerCluster Group
+        clusterGroup = L.markerClusterGroup({
+          showCoverageOnHover: false,
+          spiderfyOnMaxZoom: false,
+          zoomToBoundsOnClick: true,
+          chunkedLoading: true,
+          chunkInterval: 120,
+          chunkDelay: 5,
+          maxClusterRadius: 48,
+          disableClusteringAtZoom: 16,
+          iconCreateFunction: function(cluster) {
+            const count = cluster.getChildCount();
+            let sizeClass = "small";
+            if (count > 100) sizeClass = "large";
+            else if (count > 25) sizeClass = "medium";
+
+            return L.divIcon({
+              html: `
+                <div class="oceanic-cluster ${sizeClass}">
+                  <div class="cluster-ripple"></div>
+                  <div class="cluster-core">
+                    <span class="cluster-num">${count}</span>
+                    <span class="cluster-label">TIDES</span>
+                  </div>
+                </div>
+              `,
+              className: "cluster-marker-wrap",
+              iconSize: [48, 48],
+              iconAnchor: [24, 24]
+            });
+          }
+        });
+
+        map.addLayer(clusterGroup);
+
+        populateStations();
+        restoreInitialLocation();
+        setupDrawerGestures();
+        setupSliderScrollListener();
+      }
+
+      /**
+       * Populate all stations into MarkerCluster
+       */
+      function populateStations() {
+        if (!window.TIDES_STATIONS || !Array.isArray(window.TIDES_STATIONS)) return;
+
+        const total = window.TIDES_STATIONS.length;
+        document.getElementById("stationCountDisplay").textContent = `${total.toLocaleString()} STATIONS`;
+
+        const markers = [];
+        for (let i = 0; i < total; i++) {
+          const raw = window.TIDES_STATIONS[i];
+          const station = {
+            id: raw[0],
+            name: raw[1],
+            region: raw[2],
+            country: raw[3],
+            continent: raw[4],
+            lat: raw[5],
+            lng: raw[6],
+            url: `https://tides4fishing.com${raw[7]}`
+          };
+
+          const isHome = QuickAccessManager.isHomeLocation(station.id);
+          const icon = createStationMarkerIcon(station, isHome, false);
+
+          const marker = L.marker([station.lat, station.lng], {
+            icon: icon,
+            riseOnHover: true
+          });
+
+          marker.stationData = station;
+          marker.on("click", function() {
+            // AUTOMATICALLY POP UP FULL TELEMETRY WINDOW ON TAP!
+            selectStation(station, true, true);
+          });
+
+          stationMarkerMap.set(station.id, marker);
+          markers.push(marker);
+        }
+
+        clusterGroup.addLayers(markers);
+      }
+
+      function createStationMarkerIcon(station, isHome = false, isActive = false) {
+        const homeTag = isHome ? `<span class="home-star">★</span>` : "";
+        const displayName = QuickAccessManager.getDisplayName(station);
+
+        return L.divIcon({
+          className: "custom-station-marker",
+          html: `
+            <div class="tide-marker-container ${isHome ? 'is-home' : ''} ${isActive ? 'active' : ''}">
+              ${homeTag}
+              <div class="tide-marker-pin"></div>
+              ${isActive ? `<div class="marker-pill">${escapeHtml(displayName)}</div>` : ''}
+            </div>
+          `,
+          iconSize: [44, 44],
+          iconAnchor: [22, 22]
+        });
+      }
+
+      function restoreInitialLocation() {
+        const last = QuickAccessManager.getLastLocation();
+        const home = QuickAccessManager.getHomeLocation();
+
+        let target = last || home;
+
+        if (!target && window.TIDES_STATIONS && window.TIDES_STATIONS.length > 0) {
+          const defaultRaw = window.TIDES_STATIONS.find(s => s[0].includes("miami")) || window.TIDES_STATIONS[0];
+          target = {
+            id: defaultRaw[0],
+            name: defaultRaw[1],
+            region: defaultRaw[2],
+            country: defaultRaw[3],
+            continent: defaultRaw[4],
+            lat: defaultRaw[5],
+            lng: defaultRaw[6],
+            url: `https://tides4fishing.com${defaultRaw[7]}`
+          };
+        }
+
+        if (target) {
+          map.setView([target.lat, target.lng], 10);
+          selectStation(target, false, false);
+        } else {
+          map.setView([25.77, -80.13], 7);
+        }
+      }
+
+      /**
+       * Select and activate a station
+       * @param {Object} station
+       * @param {boolean} animateFly
+       * @param {boolean} autoOpenPopup Whether to automatically pop up the full telemetry screen
+       */
+      
+      // Cache for live station data from tides4fishing.com
+      const liveStationCache = new Map();
+
+      // Native Bridge callback for live station telemetry from tides4fishing.com
+      window.onStationLiveDataReceived = function(rawJson) {
+        try {
+          const data = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
+          if (!data || data.error) {
+            console.warn("Live station fetch error:", data ? data.error : "Unknown");
+            return;
+          }
+          if (currentStation) {
+            liveStationCache.set(currentStation.id, data);
+            try {
+              localStorage.setItem("live_tide_" + currentStation.id, JSON.stringify(data));
+            } catch (_) {}
+            applyLiveStationData(data);
+          }
+        } catch (e) {
+          console.warn("Error processing live station data:", e);
+        }
+      };
+
+      function requestLiveStationData(station) {
+        if (!station || !station.url) return;
+
+        // 1. Check memory cache
+        if (liveStationCache.has(station.id)) {
+          const cached = liveStationCache.get(station.id);
+          if (cached && cached.days && cached.days.length > 0) {
+            applyLiveStationData(cached);
+            return;
+          }
+        }
+
+        // 2. Check localStorage persistent cache
+        try {
+          const stored = localStorage.getItem("live_tide_" + station.id);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed && ((parsed.days && parsed.days.length > 0) || (parsed.tides && parsed.tides.length > 0))) {
+              liveStationCache.set(station.id, parsed);
+              applyLiveStationData(parsed);
+              if (parsed.days && parsed.days.length > 0) {
+                return;
+              }
+            }
+          }
+        } catch (_) {}
+
+        // 3. Fetch via Native Android Bridge
+        if (window.EbbFlowBridge && typeof window.EbbFlowBridge.fetchStationLiveData === "function") {
+          window.EbbFlowBridge.fetchStationLiveData(station.url, "window.onStationLiveDataReceived");
+          return;
+        }
+
+        // 4. Fallback browser fetch if bridge not available
+        fetch(station.url)
+          .then(r => r.text())
+          .then(html => {
+            const data = parseTidesHtmlClientside(html);
+            if (data && data.tides && data.tides.length > 0) {
+              liveStationCache.set(station.id, data);
+              try {
+                localStorage.setItem("live_tide_" + station.id, JSON.stringify(data));
+              } catch (_) {}
+              if (currentStation && currentStation.id === station.id) {
+                applyLiveStationData(data);
+              }
+            }
+          })
+          .catch(err => console.log("Web live fetch error:", err));
+      }
+
+      function parseTidesHtmlClientside(html) {
+        const result = {
+          day: 0,
+          dateStr: "",
+          tides: [],
+          sunrise: "",
+          sunset: "",
+          coef: 0,
+          solunar: "MODERATE",
+          moonPhase: "",
+          moonAge: "",
+          moonIllum: "",
+          days: [],
+          todayIndex: 0
+        };
+
+        // 1. Station's local date
+        let todayDayNum = 0;
+        const todayMatch = html.match(/Today\s+([A-Za-z]+),\s*(\d+)(?:<sup>[^<]*<\/sup>)?\s+of\s+([A-Za-z]+)\s+of\s+(\d{4})/i);
+        if (todayMatch) {
+          todayDayNum = parseInt(todayMatch[2], 10);
+          result.day = todayDayNum;
+          result.dateStr = `${todayMatch[1]}, ${todayMatch[3]} ${todayMatch[2]}, ${todayMatch[4]}`;
+        } else {
+          const fbMatch = html.match(/Day\('(\d{4})-(\d{2})-(\d{2})'\)/);
+          if (fbMatch) {
+            todayDayNum = parseInt(fbMatch[3], 10);
+            result.day = todayDayNum;
+          } else {
+            todayDayNum = new Date().getDate();
+            result.day = todayDayNum;
+          }
+        }
+
+        // Detect month prefix if present: Day('2026-09-14') -> 2026-09
+        const mpMatch = html.match(/Day\('(\d{4}-\d{2})-\d+'\)/);
+        const monthPrefix = mpMatch ? mpMatch[1] : "";
+
+        // 2. Iterate all rows in tabla_mareas_fila
+        const rowRegex = /<tr([^>]*)>([\s\S]*?)<\/tr>/gi;
+        let rowMatch;
+        const seenDays = new Set();
+
+        while ((rowMatch = rowRegex.exec(html)) !== null) {
+          const trAttrs = rowMatch[1];
+          if (!trAttrs.includes("tabla_mareas_fila")) continue;
+          const rowHtml = rowMatch[2];
+
+          const numM = rowHtml.match(/class="tabla_mareas_dia_numero"[^>]*>\s*(\d+)\s*</);
+          if (!numM) continue;
+          const dayNum = parseInt(numM[1], 10);
+          if (isNaN(dayNum)) continue;
+
+          // Filter out other months if prefix present
+          const clickM = trAttrs.match(/onclick="Day\('([^']+)'\);"/);
+          if (clickM && monthPrefix && !clickM[1].startsWith(monthPrefix)) {
+            continue;
+          }
+
+          if (seenDays.has(dayNum)) continue;
+          seenDays.add(dayNum);
+
+          const isToday = (dayNum === todayDayNum) || trAttrs.includes("fondo3") || rowHtml.includes("fondo3");
+          if (isToday) {
+            result.todayIndex = result.days.length;
+          }
+
+          const dayNameM = rowHtml.match(/class="tabla_mareas_dia_dia"[^>]*>\s*([^<]+)\s*</);
+          const dayName = dayNameM ? dayNameM[1].trim() : "";
+
+          const titleM = trAttrs.match(/title="([^"]+)"/);
+          const dateTitle = titleM ? titleM[1].trim() : `${dayName}, Day ${dayNum}`;
+
+          const dayObj = {
+            day: dayNum,
+            dayName: dayName,
+            dateTitle: dateTitle,
+            isToday: isToday,
+            sunrise: "",
+            sunset: "",
+            coef: 0,
+            solunar: "MODERATE",
+            tides: []
+          };
+
+          // Sunrise / Sunset
+          const sunTdMatch = rowHtml.match(/class="tabla_mareas_salida_puesta_sol"[^>]*>([\s\S]*?)<\/td>/i);
+          if (sunTdMatch) {
+            const suns = [];
+            const sunRegex = /(\d{1,2}:\d{2})(?:<[^>]*>|\s)*([apm]+|h)?/gi;
+            let sm;
+            while ((sm = sunRegex.exec(sunTdMatch[1])) !== null) {
+              const time = sm[1];
+              const tag = (sm[2] || "").trim().toLowerCase();
+              suns.push(tag ? `${time} ${tag}` : time);
+            }
+            if (suns.length >= 1) dayObj.sunrise = suns[0];
+            if (suns.length >= 2) dayObj.sunset = suns[1];
+          }
+
+          // Coefficient & Solunar
+          const coefTdMatch = rowHtml.match(/class="tabla_mareas_coeficiente"[^>]*>([\s\S]*?)<\/td>/i);
+          if (coefTdMatch) {
+            const cTxt = coefTdMatch[1];
+            const cNum = cTxt.match(/(\d+)/);
+            if (cNum) dayObj.coef = parseInt(cNum[1], 10);
+            const lower = cTxt.toLowerCase();
+            if (lower.includes("very high")) dayObj.solunar = "VERY HIGH";
+            else if (lower.includes("high")) dayObj.solunar = "HIGH";
+            else if (lower.includes("low")) dayObj.solunar = "LOW";
+            else dayObj.solunar = "MODERATE";
+          }
+
+          // Tides
+          const tideTdRegex = /<td[^>]*class="[^"]*tabla_mareas_marea[^"]*"[^>]*>([\s\S]*?)<\/td>/gi;
+          let tm;
+          while ((tm = tideTdRegex.exec(rowHtml)) !== null) {
+            const td = tm[1];
+            const timeM = td.match(/class="tabla_mareas_marea_hora[^"]*"[^>]*>\s*(\d{1,2}:\d{2})(?:<[^>]*>|\s)*([apm]+|h)?/i);
+            const altM = td.match(/class="tabla_mareas_marea_altura_numero"[^>]*>\s*([-\d.]+)\s*<\/span>\s*([a-zA-Z]+)/i);
+            if (timeM && altM) {
+              const isHigh = td.includes("tabla_mareas_marea_pleamar");
+              const tVal = timeM[1];
+              const tAmpm = (timeM[2] || "").trim().toLowerCase();
+              const timeStr = tAmpm ? `${tVal} ${tAmpm}` : tVal;
+              const hVal = altM[1];
+              const uVal = altM[2].trim().toLowerCase();
+              dayObj.tides.push({
+                type: isHigh ? "HIGH TIDE" : "LOW TIDE",
+                time: timeStr,
+                height: `${hVal} ${uVal}`,
+                val: parseFloat(hVal) || 0
+              });
+            }
+          }
+
+          result.days.push(dayObj);
+        }
+
+        // Set top-level fallback fields from today's day object
+        if (result.days.length > 0) {
+          const todayObj = result.days[result.todayIndex] || result.days[0];
+          result.tides = todayObj.tides;
+          result.sunrise = todayObj.sunrise;
+          result.sunset = todayObj.sunset;
+          result.coef = todayObj.coef;
+          result.solunar = todayObj.solunar;
+          if (!result.dateStr) result.dateStr = todayObj.dateTitle;
+        }
+
+        // 3. Lunar Phase, Age, Illumination
+        const phaseM = html.match(/The lunar phase is (?:a |an )?([^.<]+)/i);
+        if (phaseM) result.moonPhase = phaseM[1].trim();
+
+        const ageM = html.match(/(?:JS_VALOR_EDAD_LUNAR\s*=\s*([\d.]+)|MOON AGE\s*([\d.]+))/i);
+        if (ageM) {
+          const raw = ageM[1] || ageM[2];
+          const val = parseFloat(raw);
+          result.moonAge = !isNaN(val) ? `${val.toFixed(1)}d` : raw.trim();
+        }
+
+        const illumM = html.match(/(?:JS_VALOR_ILUMINACION\s*=\s*([\d.]+)|LIGHTING\s*(\d+))/i);
+        if (illumM) {
+          const raw = illumM[1] || illumM[2];
+          const val = parseFloat(raw);
+          result.moonIllum = !isNaN(val) ? `${Math.round(val)}%` : raw.trim();
+        }
+
+        return result;
+      }
+
+      function parseTimeToMinutes(timeStr) {
+        if (!timeStr) return 0;
+        const m = timeStr.match(/(\d{1,2}):(\d{2})(?:\s*([apm]+|h))?/i);
+        if (!m) return 0;
+        let h = parseInt(m[1], 10);
+        const min = parseInt(m[2], 10);
+        const tag = (m[3] || "").toLowerCase();
+        if (tag === "pm" && h < 12) h += 12;
+        if (tag === "am" && h === 12) h = 0;
+        return h * 60 + min;
+      }
+
+      function showStationLoadingState(station) {
+        if (tideTableTitleTextEl) tideTableTitleTextEl.textContent = "TODAY'S TIDE TABLE";
+        if (tideTableDateEl) tideTableDateEl.textContent = "SYNCING...";
+        if (tideDaysStripEl) tideDaysStripEl.innerHTML = "";
+        if (tideDaysSliderEl) {
+          tideDaysSliderEl.innerHTML = `
+            <div class="tide-loading-box" style="width:100%;">
+              <div class="tide-loading-spinner"></div>
+              <span>CONNECTING TO TIDES4FISHING.COM...</span>
+            </div>
+          `;
+        }
+        sunTimesDisplayEl.textContent = "SYNCING...";
+        lunarPhaseNameEl.textContent = "🌕 Fetching Moon Data...";
+        lunarIllumEl.textContent = "Live Ephemeris Loading...";
+        solunarCoefEl.textContent = "-- / 118";
+        solunarActivityEl.textContent = "CALCULATING ACTIVITY...";
+        nextHighTimeEl.textContent = "--:--";
+        nextHighCountdownEl.textContent = "--h --m";
+        nextLowTimeEl.textContent = "--:--";
+        nextLowCountdownEl.textContent = "--h --m";
+        liveWaterLevelEl.textContent = "--.- FT";
+        tendencyArrowEl.textContent = "▲";
+        tendencyTextEl.textContent = "SYNCING";
+        tidalRangeDisplayEl.textContent = "--.- FT";
+      }
+
+      function applyLiveStationData(data) {
+        if (!data || !currentStation) return;
+        currentStationLiveData = data;
+
+        // 1. Lunar Data (applies to current station)
+        if (data.moonPhase) {
+          let icon = "🌓";
+          const p = data.moonPhase.toLowerCase();
+          if (p.includes("full")) icon = "🌕";
+          else if (p.includes("new")) icon = "🌑";
+          else if (p.includes("crescent")) icon = "🌒";
+          else if (p.includes("gibbous")) icon = "🌔";
+          else if (p.includes("quarter")) icon = "🌓";
+          lunarPhaseNameEl.textContent = `${icon} ${data.moonPhase}`;
+        }
+        if (data.moonIllum || data.moonAge) {
+          const parts = [];
+          if (data.moonIllum) parts.push(`${data.moonIllum} Illum`);
+          if (data.moonAge) parts.push(`Age ${data.moonAge}`);
+          lunarIllumEl.textContent = parts.join(" • ");
+        }
+
+        // 2. Days array normalization
+        const days = (data.days && Array.isArray(data.days) && data.days.length > 0)
+          ? data.days
+          : [{
+              day: data.day || new Date().getDate(),
+              dayName: "TODAY",
+              dateTitle: data.dateStr || "Today's Tides",
+              isToday: true,
+              sunrise: data.sunrise || "",
+              sunset: data.sunset || "",
+              coef: data.coef || 0,
+              solunar: data.solunar || "MODERATE",
+              tides: data.tides || []
+            }];
+
+        currentLiveDays = days;
+
+        let todayIdx = 0;
+        if (typeof data.todayIndex === "number" && data.todayIndex >= 0 && data.todayIndex < days.length) {
+          todayIdx = data.todayIndex;
+        } else {
+          const found = days.findIndex(d => d.isToday);
+          todayIdx = found >= 0 ? found : 0;
+        }
+
+        currentActiveDayIndex = todayIdx;
+
+        // 3. Render Horizontal Day Strip Pills
+        tideDaysStripEl.innerHTML = "";
+        days.forEach((d, idx) => {
+          const pill = document.createElement("button");
+          pill.className = `day-pill ${d.isToday ? 'is-today' : ''} ${idx === todayIdx ? 'active' : ''}`;
+          pill.setAttribute("type", "button");
+          pill.setAttribute("data-day-idx", idx);
+          pill.innerHTML = `
+            <span class="day-pill-num">${d.day}</span>
+            <span class="day-pill-name">${d.isToday ? '★ TODAY' : (d.dayName || 'DAY')}</span>
+          `;
+          pill.addEventListener("click", () => {
+            selectDay(idx, true);
+          });
+          tideDaysStripEl.appendChild(pill);
+        });
+
+        // 4. Render Horizontal Day Slides in Slider Carousel
+        tideDaysSliderEl.innerHTML = "";
+        const now = new Date();
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+        days.forEach((d, idx) => {
+          const slide = document.createElement("div");
+          slide.className = "tide-day-slide";
+          slide.setAttribute("data-day-idx", idx);
+
+          const listWrap = document.createElement("div");
+          listWrap.className = "tide-table-list";
+
+          if (d.tides && d.tides.length > 0) {
+            let nextFound = false;
+            const sortedTides = [...d.tides].map(t => ({
+              ...t,
+              minutes: parseTimeToMinutes(t.time)
+            })).sort((a, b) => a.minutes - b.minutes);
+
+            sortedTides.forEach(t => {
+              let status = "PAST";
+              if (d.isToday) {
+                if (t.minutes > currentMinutes) {
+                  if (!nextFound) {
+                    status = "NEXT";
+                    nextFound = true;
+                  } else {
+                    status = "UPCOMING";
+                  }
+                } else {
+                  status = "PAST";
+                }
+              } else if (idx > todayIdx) {
+                status = "UPCOMING";
+              } else {
+                status = "PAST";
+              }
+
+              const row = document.createElement("div");
+              row.className = `tide-table-row ${status === 'NEXT' ? 'is-next' : ''}`;
+              row.innerHTML = `
+                <div class="tide-type-wrap">
+                  <span class="tide-type-icon ${t.type.includes('HIGH') ? 'high' : 'low'}">
+                    ${t.type.includes('HIGH') ? '▲' : '▼'}
+                  </span>
+                  <span style="font-weight:800; font-size:12px;">${t.type}</span>
+                </div>
+                <span class="tide-time-text">${t.time.toUpperCase()}</span>
+                <span class="tide-height-text">${t.height.toUpperCase()}</span>
+                <span class="tide-status-badge ${status.toLowerCase()}">${status}</span>
+              `;
+              listWrap.appendChild(row);
+            });
+          } else {
+            listWrap.innerHTML = `
+              <div style="text-align:center; padding: 22px 10px; color:var(--text-secondary); font-size:12px; letter-spacing:0.5px;">
+                No tide records available for this date
+              </div>
+            `;
+          }
+
+          slide.appendChild(listWrap);
+          tideDaysSliderEl.appendChild(slide);
+        });
+
+        // 5. Immediately display today's telemetry & jump directly to today
+        updateActiveDayDisplay(todayIdx);
+
+        requestAnimationFrame(() => {
+          scrollSliderToDay(todayIdx, false);
+          scrollStripToDay(todayIdx, false);
+        });
+      }
+
+      function selectDay(idx, smooth = true) {
+        if (idx < 0 || idx >= currentLiveDays.length) return;
+        currentActiveDayIndex = idx;
+        updateActiveDayDisplay(idx);
+        scrollSliderToDay(idx, smooth);
+        scrollStripToDay(idx, smooth);
+        if (window.EbbFlowBridge && typeof window.EbbFlowBridge.triggerHaptic === "function") {
+          window.EbbFlowBridge.triggerHaptic();
+        }
+      }
+
+      function scrollSliderToDay(idx, smooth = true) {
+        if (!tideDaysSliderEl || !tideDaysSliderEl.children[idx]) return;
+        isProgrammaticScroll = true;
+        const slide = tideDaysSliderEl.children[idx];
+        tideDaysSliderEl.scrollTo({
+          left: slide.offsetLeft,
+          behavior: smooth ? "smooth" : "auto"
+        });
+        setTimeout(() => {
+          isProgrammaticScroll = false;
+        }, smooth ? 350 : 50);
+      }
+
+      function scrollStripToDay(idx, smooth = true) {
+        if (!tideDaysStripEl || !tideDaysStripEl.children[idx]) return;
+        const pills = tideDaysStripEl.querySelectorAll(".day-pill");
+        pills.forEach((p, i) => {
+          if (i === idx) p.classList.add("active");
+          else p.classList.remove("active");
+        });
+        const activePill = tideDaysStripEl.children[idx];
+        if (activePill) {
+          const targetLeft = activePill.offsetLeft - (tideDaysStripEl.clientWidth / 2) + (activePill.clientWidth / 2);
+          tideDaysStripEl.scrollTo({
+            left: Math.max(0, targetLeft),
+            behavior: smooth ? "smooth" : "auto"
+          });
+        }
+      }
+
+      function updateActiveDayDisplay(dayIdx) {
+        const d = currentLiveDays[dayIdx];
+        if (!d) return;
+
+        // Title and Date
+        if (d.isToday) {
+          tideTableTitleTextEl.textContent = "TODAY'S TIDE TABLE";
+        } else {
+          tideTableTitleTextEl.textContent = `TIDE TABLE • ${d.dayName ? d.dayName.toUpperCase() : 'DAY'} ${d.day}`;
+        }
+        tideTableDateEl.textContent = (d.dateTitle || `DAY ${d.day}`).toUpperCase();
+
+        // Sunrise / Sunset
+        if (d.sunrise && d.sunset) {
+          sunTimesDisplayEl.textContent = `${d.sunrise.toUpperCase()} / ${d.sunset.toUpperCase()}`;
+        } else if (currentStationLiveData && currentStationLiveData.sunrise && currentStationLiveData.sunset) {
+          sunTimesDisplayEl.textContent = `${currentStationLiveData.sunrise.toUpperCase()} / ${currentStationLiveData.sunset.toUpperCase()}`;
+        }
+
+        // Solunar Coefficient & Activity
+        if (d.coef) {
+          solunarCoefEl.textContent = `${d.coef} / 118`;
+        }
+        if (d.solunar) {
+          solunarActivityEl.textContent = `${d.solunar} ACTIVITY`;
+        }
+
+        // Waveform & High/Low Extrema
+        if (d.tides && d.tides.length > 0) {
+          let minVal = 999;
+          let maxVal = -999;
+          let unit = "FT";
+          const processedTides = [];
+          for (const t of d.tides) {
+            const minutes = parseTimeToMinutes(t.time);
+            const val = typeof t.val === "number" ? t.val : (parseFloat(t.height) || 0);
+            if (val < minVal) minVal = val;
+            if (val > maxVal) maxVal = val;
+            if (t.height) {
+              const uM = t.height.match(/[a-zA-Z]+/);
+              if (uM) unit = uM[0].toUpperCase();
+            }
+            processedTides.push({
+              type: t.type,
+              time: t.time,
+              height: t.height,
+              val: val,
+              minutes: minutes
+            });
+          }
+          processedTides.sort((a, b) => a.minutes - b.minutes);
+
+          if (maxVal > -900 && minVal < 900) {
+            const range = (maxVal - minVal).toFixed(1);
+            tidalRangeDisplayEl.textContent = `${range} ${unit}`;
+          }
+
+          // Build waveform samples for this day
+          buildWaveformFromTides(processedTides, minVal, maxVal);
+
+          const now = new Date();
+          const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+          if (d.isToday) {
+            // Update real-time water level & tendency for today
+            updateWaterLevelFromRealTides(processedTides, currentMinutes, unit);
+
+            // Update Next High / Low countdowns
+            let upcomingHighObj = null;
+            let upcomingLowObj = null;
+            for (const t of processedTides) {
+              if (t.minutes > currentMinutes) {
+                if (t.type.includes("HIGH") && !upcomingHighObj) upcomingHighObj = t;
+                if (t.type.includes("LOW") && !upcomingLowObj) upcomingLowObj = t;
+              }
+            }
+            if (upcomingHighObj) {
+              const diffMin = upcomingHighObj.minutes - currentMinutes;
+              const diffH = Math.floor(diffMin / 60);
+              const diffM = diffMin % 60;
+              nextHighTimeEl.textContent = `${upcomingHighObj.time.toUpperCase()} (${upcomingHighObj.height.toUpperCase()})`;
+              nextHighCountdownEl.textContent = `${String(diffH).padStart(2,'0')}h ${String(diffM).padStart(2,'0')}m`;
+            } else {
+              nextHighTimeEl.textContent = "--:--";
+              nextHighCountdownEl.textContent = "Cycle Complete";
+            }
+
+            if (upcomingLowObj) {
+              const diffMin = upcomingLowObj.minutes - currentMinutes;
+              const diffH = Math.floor(diffMin / 60);
+              const diffM = diffMin % 60;
+              nextLowTimeEl.textContent = `${upcomingLowObj.time.toUpperCase()} (${upcomingLowObj.height.toUpperCase()})`;
+              nextLowCountdownEl.textContent = `${String(diffH).padStart(2,'0')}h ${String(diffM).padStart(2,'0')}m`;
+            } else {
+              nextLowTimeEl.textContent = "--:--";
+              nextLowCountdownEl.textContent = "Cycle Complete";
+            }
+          } else {
+            // Non-today date: show the day's peak High and lowest Low
+            const highs = processedTides.filter(t => t.type.includes("HIGH"));
+            const lows = processedTides.filter(t => t.type.includes("LOW"));
+            if (highs.length > 0) {
+              const bestHigh = highs.reduce((prev, curr) => curr.val > prev.val ? curr : prev, highs[0]);
+              nextHighTimeEl.textContent = `${bestHigh.time.toUpperCase()} (${bestHigh.height.toUpperCase()})`;
+              nextHighCountdownEl.textContent = `${d.dayName.toUpperCase()} PEAK`;
+            } else {
+              nextHighTimeEl.textContent = "--:--";
+              nextHighCountdownEl.textContent = "--";
+            }
+            if (lows.length > 0) {
+              const bestLow = lows.reduce((prev, curr) => curr.val < prev.val ? curr : prev, lows[0]);
+              nextLowTimeEl.textContent = `${bestLow.time.toUpperCase()} (${bestLow.height.toUpperCase()})`;
+              nextLowCountdownEl.textContent = `${d.dayName.toUpperCase()} TROUGH`;
+            } else {
+              nextLowTimeEl.textContent = "--:--";
+              nextLowCountdownEl.textContent = "--";
+            }
+          }
+        }
+      }
+
+      function setupSliderScrollListener() {
+        if (!tideDaysSliderEl) return;
+        tideDaysSliderEl.addEventListener("scroll", () => {
+          if (isProgrammaticScroll || !currentLiveDays || currentLiveDays.length === 0) return;
+          clearTimeout(scrollDebounceTimer);
+          scrollDebounceTimer = setTimeout(() => {
+            const scrollLeft = tideDaysSliderEl.scrollLeft;
+            let closestIdx = 0;
+            let minDiff = Infinity;
+            for (let i = 0; i < tideDaysSliderEl.children.length; i++) {
+              const child = tideDaysSliderEl.children[i];
+              const diff = Math.abs(child.offsetLeft - scrollLeft);
+              if (diff < minDiff) {
+                minDiff = diff;
+                closestIdx = i;
+              }
+            }
+            if (closestIdx >= 0 && closestIdx < currentLiveDays.length && closestIdx !== currentActiveDayIndex) {
+              currentActiveDayIndex = closestIdx;
+              updateActiveDayDisplay(closestIdx);
+              scrollStripToDay(closestIdx, true);
+              if (window.EbbFlowBridge && typeof window.EbbFlowBridge.triggerHaptic === "function") {
+                window.EbbFlowBridge.triggerHaptic();
+              }
+            }
+          }, 60);
+        }, { passive: true });
+      }
+
+      function updateWaterLevelFromRealTides(tides, currentMinutes, unit) {
+        if (!tides || tides.length === 0) return;
+
+        let prev = null;
+        let next = null;
+
+        for (let i = 0; i < tides.length; i++) {
+          if (tides[i].minutes <= currentMinutes) {
+            prev = tides[i];
+          } else if (tides[i].minutes > currentMinutes && !next) {
+            next = tides[i];
+          }
+        }
+
+        let isRising = true;
+        let currentLevel = 0;
+
+        if (prev && next) {
+          const duration = next.minutes - prev.minutes;
+          const elapsed = currentMinutes - prev.minutes;
+          const frac = duration > 0 ? Math.min(1, Math.max(0, elapsed / duration)) : 0.5;
+          const curveFrac = 0.5 - 0.5 * Math.cos(frac * Math.PI);
+          currentLevel = prev.val + (next.val - prev.val) * curveFrac;
+          isRising = next.type.includes("HIGH");
+        } else if (next) {
+          isRising = !next.type.includes("HIGH");
+          currentLevel = next.val;
+        } else if (prev) {
+          isRising = !prev.type.includes("HIGH");
+          currentLevel = prev.val;
+        }
+
+        const sign = currentLevel >= 0 ? "+" : "";
+        liveWaterLevelEl.textContent = `${sign}${currentLevel.toFixed(1)} ${unit}`;
+        tendencyArrowEl.textContent = isRising ? "▲" : "▼";
+        tendencyTextEl.textContent = isRising ? "RISING / FLOOD" : "FALLING / EBB";
+        if (isRising) {
+          liveTendencyEl.classList.remove("falling");
+        } else {
+          liveTendencyEl.classList.add("falling");
+        }
+      }
+
+      function buildWaveformFromTides(tides, minVal, maxVal) {
+        currentWaveExtrema = tides;
+        currentWaveSamples = [];
+
+        // Generate 96 samples across the 24 hour day (every 15 min)
+        for (let m = 0; m <= 1440; m += 15) {
+          let prev = tides[0];
+          let next = tides[tides.length - 1];
+
+          for (let i = 0; i < tides.length; i++) {
+            if (tides[i].minutes <= m) prev = tides[i];
+            if (tides[i].minutes >= m && (!next || tides[i].minutes < next.minutes)) {
+              next = tides[i];
+              break;
+            }
+          }
+
+          let level = prev.val;
+          if (prev !== next && next.minutes > prev.minutes) {
+            const frac = (m - prev.minutes) / (next.minutes - prev.minutes);
+            const cosFrac = 0.5 - 0.5 * Math.cos(frac * Math.PI);
+            level = prev.val + (next.val - prev.val) * cosFrac;
+          }
+
+          currentWaveSamples.push({ minute: m, level: level });
+        }
+      }
+
+      function selectStation(station, animateFly = true, autoOpenPopup = true) {
+        if (!station) return;
+        currentStation = station;
+
+        // Persistently hold location
+        QuickAccessManager.setLastLocation(station);
+
+        if (activeMarker) {
+          const oldStation = activeMarker.stationData;
+          const wasHome = QuickAccessManager.isHomeLocation(oldStation.id);
+          activeMarker.setIcon(createStationMarkerIcon(oldStation, wasHome, false));
+        }
+
+        const newMarker = stationMarkerMap.get(station.id);
+        if (newMarker) {
+          const isHome = QuickAccessManager.isHomeLocation(station.id);
+          newMarker.setIcon(createStationMarkerIcon(station, isHome, true));
+          activeMarker = newMarker;
+        }
+
+        if (animateFly) {
+          map.flyTo([station.lat, station.lng], Math.max(map.getZoom(), 11), {
+            duration: 0.9,
+            easeLinearity: 0.25
+          });
+        }
+
+        updateStationTelemetry();
+        updateActionButtonsState();
+
+        // Check if cached data exists, otherwise show loading state
+        const cached = liveStationCache.get(station.id);
+        if (cached) {
+          applyLiveStationData(cached);
+        } else {
+          try {
+            const stored = localStorage.getItem("live_tide_" + station.id);
+            if (stored) {
+              const parsed = JSON.parse(stored);
+              applyLiveStationData(parsed);
+            } else {
+              showStationLoadingState(station);
+            }
+          } catch (_) {
+            showStationLoadingState(station);
+          }
+        }
+
+        requestLiveStationData(station);
+
+        // AUTOMATICALLY OPEN POP UP SCREEN WITH FULL TIDE TABLE ON TAP!
+        if (autoOpenPopup) {
+          telemetryDrawer.classList.add("expanded");
+        }
+      }
+
+      /**
+       * Setup Touch Swipe Gestures for the Drawer:
+       * Swipe UP to Open, Swipe DOWN to Collapse!
+       */
+      function setupDrawerGestures() {
+        let touchStartY = 0;
+        let touchStartX = 0;
+        let isTouching = false;
+
+        const handleWrap = document.getElementById("drawerDragHandleWrap");
+        const headerSummary = document.getElementById("drawerHeaderSummary");
+
+        function onTouchStart(e) {
+          if (!e.touches || e.touches.length === 0) return;
+          touchStartY = e.touches[0].clientY;
+          touchStartX = e.touches[0].clientX;
+          isTouching = true;
+        }
+
+        function onTouchEnd(e) {
+          if (!isTouching) return;
+          isTouching = false;
+          const touchEndY = e.changedTouches ? e.changedTouches[0].clientY : touchStartY;
+          const touchEndX = e.changedTouches ? e.changedTouches[0].clientX : touchStartX;
+          const deltaY = touchEndY - touchStartY;
+          const deltaX = Math.abs(touchEndX - touchStartX);
+
+          // Check vertical swipe with minimum threshold (35px) and dominance over horizontal
+          if (Math.abs(deltaY) > 35 && Math.abs(deltaY) > deltaX) {
+            if (deltaY < 0) {
+              // SWIPE UP -> OPEN POPUP WINDOW!
+              telemetryDrawer.classList.add("expanded");
+            } else {
+              // SWIPE DOWN -> COLLAPSE
+              telemetryDrawer.classList.remove("expanded");
+            }
+          }
+        }
+
+        handleWrap.addEventListener("touchstart", onTouchStart, { passive: true });
+        handleWrap.addEventListener("touchend", onTouchEnd, { passive: true });
+
+        headerSummary.addEventListener("touchstart", onTouchStart, { passive: true });
+        headerSummary.addEventListener("touchend", onTouchEnd, { passive: true });
+
+        // Tap handle or header to expand when collapsed
+        handleWrap.addEventListener("click", function() {
+          telemetryDrawer.classList.toggle("expanded");
+        });
+
+        headerSummary.addEventListener("click", function(e) {
+          if (e.target.closest("#drawerMinimizeBtn")) return;
+          if (!telemetryDrawer.classList.contains("expanded")) {
+            telemetryDrawer.classList.add("expanded");
+          }
+        });
+
+        // Minimize button
+        drawerMinimizeBtn.addEventListener("click", function(e) {
+          e.stopPropagation();
+          telemetryDrawer.classList.remove("expanded");
+        });
+      }
+
+      /**
+       * Header & Basic Station Metadata Updater
+       */
+      function updateStationTelemetry() {
+        if (!currentStation) return;
+
+        // Header
+        const displayName = QuickAccessManager.getDisplayName(currentStation);
+        stationTitleEl.textContent = displayName;
+        stationSubEl.textContent = `${currentStation.region}, ${currentStation.country} • ${currentStation.lat.toFixed(4)}°, ${currentStation.lng.toFixed(4)}°`;
+
+        const isHome = QuickAccessManager.isHomeLocation(currentStation.id);
+        homeBadgeEl.style.display = isHome ? "inline-block" : "none";
+      }
+
+      function renderWaveform(now) {
+        if (!waveCanvas) return;
+        const ctx = waveCanvas.getContext("2d");
+        const w = waveCanvas.parentElement.clientWidth;
+        const h = waveCanvas.parentElement.clientHeight;
+
+        if (waveCanvas.width !== w || waveCanvas.height !== h) {
+          waveCanvas.width = w;
+          waveCanvas.height = h;
+        }
+
+        ctx.clearRect(0, 0, w, h);
+        const samples = currentWaveSamples;
+        if (!samples || samples.length === 0) {
+          // Render calm oceanic placeholder wave if no live data loaded yet
+          const paddingY = 24;
+          const zeroY = h / 2;
+          ctx.strokeStyle = "rgba(0, 245, 212, 0.15)";
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(0, zeroY);
+          ctx.lineTo(w, zeroY);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          wavePhase += 0.02;
+          ctx.beginPath();
+          ctx.moveTo(0, h);
+          for (let x = 0; x <= w; x += 10) {
+            const y = zeroY + Math.sin(x * 0.02 + wavePhase) * 12;
+            ctx.lineTo(x, y);
+          }
+          ctx.lineTo(w, h);
+          ctx.closePath();
+          ctx.fillStyle = "rgba(0, 245, 212, 0.1)";
+          ctx.fill();
+          return;
+        }
+
+        let minL = 999, maxL = -999;
+        for (const s of samples) {
+          if (s.level < minL) minL = s.level;
+          if (s.level > maxL) maxL = s.level;
+        }
+        const span = Math.max(0.5, maxL - minL);
+        const paddingY = 24;
+        const usableH = h - paddingY * 2;
+
+        function getX(sampleIdx) { return (sampleIdx / (samples.length - 1)) * w; }
+        function getY(level) {
+          const norm = (level - minL) / span;
+          return h - paddingY - norm * usableH;
+        }
+
+        // Baseline (Mean Sea Level)
+        const zeroY = getY((minL + maxL) / 2);
+        ctx.strokeStyle = "rgba(0, 245, 212, 0.15)";
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, zeroY);
+        ctx.lineTo(w, zeroY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Wave Fill Path
+        wavePhase += 0.02;
+        ctx.beginPath();
+        ctx.moveTo(0, h);
+        for (let i = 0; i < samples.length; i++) {
+          const x = getX(i);
+          const shimmer = Math.sin(i * 0.15 + wavePhase) * 1.5;
+          const y = getY(samples[i].level) + shimmer;
+          if (i === 0) ctx.lineTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.lineTo(w, h);
+        ctx.closePath();
+
+        const grad = ctx.createLinearGradient(0, paddingY, 0, h);
+        grad.addColorStop(0, "rgba(0, 245, 212, 0.45)");
+        grad.addColorStop(0.5, "rgba(0, 180, 216, 0.22)");
+        grad.addColorStop(1, "rgba(2, 8, 19, 0.95)");
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        // Wave Crest Line
+        ctx.beginPath();
+        for (let i = 0; i < samples.length; i++) {
+          const x = getX(i);
+          const shimmer = Math.sin(i * 0.15 + wavePhase) * 1.5;
+          const y = getY(samples[i].level) + shimmer;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = "#00F5D4";
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = "#00F5D4";
+        ctx.shadowBlur = 10;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Draw Real Extrema Points from tides4fishing
+        for (const ext of currentWaveExtrema) {
+          const extX = (ext.minutes / 1440.0) * w;
+          const extY = getY(ext.val);
+
+          ctx.fillStyle = ext.type.includes("HIGH") ? "#20E3B2" : "#FF6B6B";
+          ctx.beginPath();
+          ctx.arc(extX, extY, 4, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.font = "bold 9px monospace";
+          ctx.fillStyle = "#FFFFFF";
+          ctx.textAlign = "center";
+          ctx.fillText(ext.time.toUpperCase(), extX, ext.type.includes("HIGH") ? extY - 8 : extY + 14);
+        }
+
+        // Current time cursor (only shown when viewing today's waveform)
+        const isCurrentDayToday = currentLiveDays[currentActiveDayIndex] ? currentLiveDays[currentActiveDayIndex].isToday : true;
+        if (now && isCurrentDayToday) {
+          const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60.0;
+          const cursorX = (nowMinutes / 1440.0) * w;
+
+          ctx.strokeStyle = "#FFFFFF";
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(cursorX, 10);
+          ctx.lineTo(cursorX, h - 5);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = "#00F5D4";
+          ctx.shadowColor = "#00F5D4";
+          ctx.shadowBlur = 12;
+          ctx.beginPath();
+          ctx.arc(cursorX, 12, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+      }
+
+      function updateActionButtonsState() {
+        if (!currentStation) return;
+        const isHome = QuickAccessManager.isHomeLocation(currentStation.id);
+        const isSaved = QuickAccessManager.isSaved(currentStation.id);
+
+        setHomeBtn.classList.toggle("is-active", isHome);
+        document.getElementById("setHomeText").textContent = isHome ? "Home Base" : "Set Home";
+        document.getElementById("setHomeIcon").textContent = isHome ? "★" : "☆";
+
+        toggleSaveBtn.classList.toggle("is-active", isSaved);
+        document.getElementById("toggleSaveIcon").textContent = isSaved ? "★ Saved" : "🔖 Save";
+      }
+
+      function escapeHtml(str) {
+        return (str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      }
+
+      // Action Handlers
+      homeQuickBtn.addEventListener("click", function() {
+        const home = QuickAccessManager.getHomeLocation();
+        if (home) selectStation(home, true, true);
+        else alert("No Home location set yet! Tap any station and click 'Set Home'.");
+      });
+
+      setHomeBtn.addEventListener("click", function() {
+        if (!currentStation) return;
+        const success = QuickAccessManager.setHomeLocation(currentStation);
+        if (success) {
+          updateActionButtonsState();
+          updateStationTelemetry();
+          if (activeMarker) activeMarker.setIcon(createStationMarkerIcon(currentStation, true, true));
+        }
+      });
+
+      toggleSaveBtn.addEventListener("click", function() {
+        if (!currentStation) return;
+        if (QuickAccessManager.isSaved(currentStation.id)) {
+          QuickAccessManager.removeFromQuickAccess(currentStation.id);
+        } else {
+          QuickAccessManager.addToQuickAccess(currentStation);
+        }
+        updateActionButtonsState();
+      });
+
+      editNicknameBtn.addEventListener("click", function() {
+        if (!currentStation) return;
+        const currentNick = QuickAccessManager.getDisplayName(currentStation);
+        nicknameInput.value = currentNick !== currentStation.name ? currentNick : "";
+        nicknameModal.classList.add("open");
+        nicknameInput.focus();
+      });
+
+      document.getElementById("closeNicknameModal").addEventListener("click", function() {
+        nicknameModal.classList.remove("open");
+      });
+
+      document.getElementById("saveNicknameBtn").addEventListener("click", function() {
+        if (!currentStation) return;
+        const newNick = nicknameInput.value.trim();
+        QuickAccessManager.addToQuickAccess(currentStation, newNick);
+        nicknameModal.classList.remove("open");
+        updateStationTelemetry();
+        if (activeMarker) {
+          const isHome = QuickAccessManager.isHomeLocation(currentStation.id);
+          activeMarker.setIcon(createStationMarkerIcon(currentStation, isHome, true));
+        }
+      });
+
+      document.getElementById("clearNicknameBtn").addEventListener("click", function() {
+        if (!currentStation) return;
+        QuickAccessManager.updateNickname(currentStation.id, "");
+        nicknameModal.classList.remove("open");
+        updateStationTelemetry();
+        if (activeMarker) {
+          const isHome = QuickAccessManager.isHomeLocation(currentStation.id);
+          activeMarker.setIcon(createStationMarkerIcon(currentStation, isHome, true));
+        }
+      });
+
+      openExternalBtn.addEventListener("click", function() {
+        if (!currentStation || !currentStation.url) return;
+        if (window.EbbFlowBridge && window.EbbFlowBridge.openExternalUrl) {
+          window.EbbFlowBridge.openExternalUrl(currentStation.url);
+        } else {
+          window.open(currentStation.url, "_blank");
+        }
+      });
+
+      // Search Handlers
+      searchTriggerBtn.addEventListener("click", function() {
+        searchModal.classList.add("open");
+        searchInput.focus();
+        renderSearchResults("");
+      });
+
+      document.getElementById("closeSearchModal").addEventListener("click", function() {
+        searchModal.classList.remove("open");
+      });
+
+      searchInput.addEventListener("input", function() {
+        renderSearchResults(this.value.trim().toLowerCase());
+      });
+
+      function renderSearchResults(query) {
+        if (!window.TIDES_STATIONS) return;
+        searchResultsList.innerHTML = "";
+
+        let matches = [];
+        if (!query) {
+          matches = window.TIDES_STATIONS.slice(0, 30);
+        } else {
+          const q = query.toLowerCase();
+          for (let i = 0; i < window.TIDES_STATIONS.length; i++) {
+            const raw = window.TIDES_STATIONS[i];
+            const name = raw[1].toLowerCase();
+            const region = raw[2].toLowerCase();
+            const country = raw[3].toLowerCase();
+
+            if (name.includes(q) || region.includes(q) || country.includes(q)) {
+              matches.push(raw);
+              if (matches.length >= 50) break;
+            }
+          }
+        }
+
+        for (const raw of matches) {
+          const s = {
+            id: raw[0],
+            name: raw[1],
+            region: raw[2],
+            country: raw[3],
+            continent: raw[4],
+            lat: raw[5],
+            lng: raw[6],
+            url: `https://tides4fishing.com${raw[7]}`
+          };
+
+          const isHome = QuickAccessManager.isHomeLocation(s.id);
+          const card = document.createElement("div");
+          card.className = "station-item-card";
+          card.innerHTML = `
+            <div class="station-item-left">
+              <span class="station-item-name">${isHome ? '★ ' : ''}${escapeHtml(s.name)}</span>
+              <span class="station-item-sub">${escapeHtml(s.region)}, ${escapeHtml(s.country)}</span>
+            </div>
+            <div class="station-item-actions">
+              <span class="item-action-icon">⚲</span>
+            </div>
+          `;
+
+          card.addEventListener("click", function() {
+            searchModal.classList.remove("open");
+            selectStation(s, true, true);
+          });
+
+          searchResultsList.appendChild(card);
+        }
+      }
+
+      // Quick Access Modal Handlers
+      savedTriggerBtn.addEventListener("click", function() {
+        savedModal.classList.add("open");
+        renderSavedList();
+      });
+
+      document.getElementById("closeSavedModal").addEventListener("click", function() {
+        savedModal.classList.remove("open");
+      });
+
+      function renderSavedList() {
+        savedResultsList.innerHTML = "";
+        const list = QuickAccessManager.getQuickAccessList();
+        const home = QuickAccessManager.getHomeLocation();
+
+        if (list.length === 0 && !home) {
+          savedResultsList.innerHTML = `
+            <div style="text-align:center; padding: 30px 10px; color: var(--text-secondary);">
+              <p style="font-size: 24px; margin-bottom: 8px;">🔖</p>
+              <p style="font-weight: 700;">No saved locations yet.</p>
+              <p style="font-size: 11px; margin-top: 4px;">Tap the bookmark icon or 'Set Home' on any station to pin it here with custom nicknames.</p>
+            </div>
+          `;
+          return;
+        }
+
+        if (home) {
+          const homeCard = document.createElement("div");
+          homeCard.className = "station-item-card";
+          homeCard.style.borderColor = "var(--bio-gold)";
+          const nick = QuickAccessManager.getDisplayName(home);
+          homeCard.innerHTML = `
+            <div class="station-item-left">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="color:var(--bio-gold); font-weight:900; font-size:11px;">[HOME BASE]</span>
+                <span class="station-item-name" style="color:var(--bio-gold);">${escapeHtml(nick)}</span>
+              </div>
+              <span class="station-item-sub">${escapeHtml(home.name)} • ${escapeHtml(home.region)}</span>
+            </div>
+            <div class="station-item-actions">
+              <span class="item-action-icon">⚲ Jump</span>
+            </div>
+          `;
+          homeCard.addEventListener("click", function() {
+            savedModal.classList.remove("open");
+            selectStation(home, true, true);
+          });
+          savedResultsList.appendChild(homeCard);
+        }
+
+        for (const item of list) {
+          if (home && item.id === home.id) continue;
+          const card = document.createElement("div");
+          card.className = "station-item-card";
+          const hasNick = item.nickname && item.nickname.trim().length > 0;
+          card.innerHTML = `
+            <div class="station-item-left">
+              <span class="station-item-name">${escapeHtml(hasNick ? item.nickname : item.name)}</span>
+              <span class="station-item-sub">${hasNick ? escapeHtml(item.name) + ' • ' : ''}${escapeHtml(item.region)}, ${escapeHtml(item.country)}</span>
+            </div>
+            <div class="station-item-actions">
+              <button class="item-action-icon edit-nick-action" title="Edit Nickname">✏️</button>
+              <button class="item-action-icon remove-saved-action" title="Remove">🗑️</button>
+            </div>
+          `;
+
+          card.addEventListener("click", function(e) {
+            if (e.target.closest(".edit-nick-action") || e.target.closest(".remove-saved-action")) return;
+            savedModal.classList.remove("open");
+            selectStation(item, true, true);
+          });
+
+          card.querySelector(".edit-nick-action").addEventListener("click", function(e) {
+            e.stopPropagation();
+            currentStation = item;
+            nicknameInput.value = item.nickname || "";
+            savedModal.classList.remove("open");
+            nicknameModal.classList.add("open");
+            nicknameInput.focus();
+          });
+
+          card.querySelector(".remove-saved-action").addEventListener("click", function(e) {
+            e.stopPropagation();
+            QuickAccessManager.removeFromQuickAccess(item.id);
+            renderSavedList();
+            updateActionButtonsState();
+          });
+
+          savedResultsList.appendChild(card);
+        }
+      }
+
+      // Initialize
+      document.addEventListener("DOMContentLoaded", function() {
+        initMap();
+        setInterval(function() {
+          const now = new Date();
+          realtimeClockEl.textContent = now.toLocaleTimeString();
+          renderWaveform(now);
+        }, 1000);
+      });
+
+    })();
+  </script>
+</body>
+</html>

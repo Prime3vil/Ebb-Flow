@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.EbbFlow" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/bio_teal</item>
+        <item name="colorPrimaryVariant">@color/abyss_dark</item>
+        <item name="colorOnPrimary">@color/abyss_dark</item>
+        <item name="android:statusBarColor">@color/abyss_dark</item>
+        <item name="android:navigationBarColor">@color/abyss_dark</item>
+        <item name="android:windowBackground">@color/abyss_dark</item>
+    </style>
+</resources>

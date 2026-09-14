@@ -1,0 +1,9 @@
+{
+  "name": "ebbflow",
+  "productName": "Ebb&Flow",
+  "version": "1.0.0",
+  "description": "Ebb&Flow - Global Oceanic Tide Reconnaissance & Solunar Ephemeris",
+  "main": "main.js",
+  "author": "Ebb&Flow Dev Team",
+  "license": "ISC"
+}

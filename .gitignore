@@ -1,0 +1,53 @@
+# System & OS Files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+*~
+*.swp
+
+# Release Archives & Binaries (Use GitHub Releases for files > 100MB)
+*.zip
+*.tar.gz
+*.dmg
+*.exe
+*.apk
+releases/
+
+# Android / Gradle
+.gradle/
+build/
+app/build/
+.kotlin/
+local.properties
+*.hprof
+.cxx/
+captures/
+
+# Node / Electron
+node_modules/
+dist/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# IDE / Editor configurations
+.idea/
+.vscode/
+*.iml
+
+# Environment & Credentials
+.env
+.env.*.local
+*.pem
+*.key
