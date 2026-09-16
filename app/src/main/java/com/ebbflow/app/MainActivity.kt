@@ -31,10 +31,10 @@ class MainActivity : AppCompatActivity() {
             databaseEnabled = true
             loadWithOverviewMode = true
             useWideViewPort = true
-            allowFileAccess = true
+            allowFileAccess = false
             allowContentAccess = true
             cacheMode = WebSettings.LOAD_DEFAULT
-            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         }
 
         webView.webViewClient = WebViewClient()

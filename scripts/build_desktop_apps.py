@@ -14,7 +14,7 @@ ICON_ICNS = os.path.join(BASE_DIR, "scripts", "icon.icns")
 PKG_JSON = {
     "name": "ebbflow",
     "productName": "Ebb&Flow",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Ebb&Flow - Global Oceanic Tide Reconnaissance & Solunar Ephemeris",
     "main": "main.js",
     "author": "Ebb&Flow Dev Team",
@@ -32,6 +32,125 @@ contextBridge.exposeInMainWorld('desktopBridge', {
   isMaximized: () => ipcRenderer.invoke('window-is-maximized'),
   onMaximizedState: (callback) => ipcRenderer.on('window-maximized-state', (_, state) => callback(state)),
   onFullscreenState: (callback) => ipcRenderer.on('window-fullscreen-state', (_, state) => callback(state))
+});
+"""
+
+MAIN_JS_LINUX = """const { app, BrowserWindow, ipcMain, session } = require('electron');
+const path = require('path');
+
+app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+app.setName('Ebb&Flow');
+
+let mainWindow = null;
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1440,
+    height: 920,
+    minWidth: 1024,
+    minHeight: 700,
+    frame: true,
+    backgroundColor: '#020813',
+    icon: path.join(__dirname, 'icon.png'),
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      webSecurity: false,
+      allowRunningInsecureContent: true
+    }
+  });
+
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    const requestHeaders = Object.assign({}, details.requestHeaders);
+    requestHeaders['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    callback({ requestHeaders });
+  });
+
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const responseHeaders = Object.assign({}, details.responseHeaders);
+    for (const key of Object.keys(responseHeaders)) {
+      const lower = key.toLowerCase();
+      if (lower === 'x-frame-options' || lower === 'content-security-policy') {
+        delete responseHeaders[key];
+      }
+    }
+    callback({ responseHeaders });
+  });
+
+  mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+  });
+
+  mainWindow.on('maximize', () => {
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('window-maximized-state', true);
+    }
+  });
+
+  mainWindow.on('unmaximize', () => {
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('window-maximized-state', false);
+    }
+  });
+
+  mainWindow.on('enter-full-screen', () => {
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('window-fullscreen-state', true);
+    }
+  });
+
+  mainWindow.on('leave-full-screen', () => {
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('window-fullscreen-state', false);
+    }
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+}
+
+ipcMain.on('window-minimize', () => {
+  if (mainWindow) mainWindow.minimize();
+});
+
+ipcMain.on('window-maximize', () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize();
+  } else {
+    mainWindow.maximize();
+  }
+});
+
+ipcMain.on('window-close', () => {
+  if (mainWindow) mainWindow.close();
+});
+
+ipcMain.on('window-fullscreen', () => {
+  if (mainWindow) {
+    mainWindow.setFullScreen(!mainWindow.isFullScreen());
+  }
+});
+
+ipcMain.handle('window-is-maximized', () => {
+  return mainWindow ? mainWindow.isMaximized() : false;
+});
+
+app.whenReady().then(() => {
+  createWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on('window-all-closed', () => {
+  app.quit();
 });
 """
 
@@ -288,6 +407,51 @@ def zip_folder(folder_path, output_zip_path):
                 zipf.write(full_path, rel_path)
     print(f"✓ Zip ready: {output_zip_path} ({os.path.getsize(output_zip_path)} bytes)")
 
+def build_linux():
+    print("\n==========================================")
+    print("BUILDING LINUX DESKTOP APP (x64)")
+    print("==========================================")
+    app_dir = os.path.join(BASE_DIR, "Linux app")
+    os.makedirs(app_dir, exist_ok=True)
+    
+    copy_tree(MAP_SRC, os.path.join(app_dir, "src"))
+    shutil.copyfile(ICON_PNG, os.path.join(app_dir, "icon.png"))
+    
+    with open(os.path.join(app_dir, "package.json"), "w") as f:
+        json.dump(PKG_JSON, f, indent=2)
+        
+    with open(os.path.join(app_dir, "preload.js"), "w") as f:
+        f.write(PRELOAD_JS_TEMPLATE.replace("__PLATFORM__", "linux"))
+        
+    with open(os.path.join(app_dir, "main.js"), "w") as f:
+        f.write(MAIN_JS_LINUX)
+
+    cmd = [
+        "npx", "--yes", "electron-packager", ".", "Ebb&Flow",
+        "--platform=linux", "--arch=x64",
+        "--electron-version=34.3.0",
+        "--out=dist",
+        "--overwrite", "--prune=true", "--asar"
+    ]
+    print("Running:", " ".join(cmd))
+    subprocess.check_call(cmd, cwd=app_dir)
+    
+    dist_dir = os.path.join(app_dir, "dist")
+    out_app_folder = os.path.join(dist_dir, "Ebb&Flow-linux-x64")
+    zip_path = os.path.join(dist_dir, "Ebb&Flow-Linux-x64.zip")
+    tar_path = os.path.join(dist_dir, "Ebb&Flow-Linux-x64.tar.gz")
+    
+    zip_folder(out_app_folder, zip_path)
+    
+    print(f"Creating tar.gz archive: {tar_path} ...")
+    with tarfile.open(tar_path, "w:gz") as tar:
+        tar.add(out_app_folder, arcname="Ebb&Flow-linux-x64")
+    print(f"✓ tar.gz ready: {tar_path}")
+
+    releases_dir = os.path.join(BASE_DIR, "releases")
+    shutil.copyfile(zip_path, os.path.join(releases_dir, "Ebb&Flow-Linux-x64.zip"))
+    print("✓ Linux App Build Complete & Synced to releases/!")
+
 def build_windows():
     print("\n==========================================")
     print("BUILDING WINDOWS DESKTOP APP")
@@ -316,15 +480,21 @@ def build_windows():
         "--out=dist",
         "--overwrite", "--prune=true", "--asar"
     ]
+    env = os.environ.copy()
+    env["WINE_BINARY"] = "/usr/bin/true"
     print("Running:", " ".join(cmd))
-    subprocess.check_call(cmd, cwd=app_dir)
+    subprocess.check_call(cmd, cwd=app_dir, env=env)
     
     dist_dir = os.path.join(app_dir, "dist")
     out_app_folder = os.path.join(dist_dir, "Ebb&Flow-win32-x64")
     # Also place icon.ico in root of the output folder for Windows shortcut convenience
     shutil.copyfile(ICON_ICO, os.path.join(out_app_folder, "icon.ico"))
-    zip_folder(out_app_folder, os.path.join(dist_dir, "Ebb&Flow-Windows-x64.zip"))
-    print("✓ Windows App Build Complete!")
+    win_zip = os.path.join(dist_dir, "Ebb&Flow-Windows-x64.zip")
+    zip_folder(out_app_folder, win_zip)
+    
+    releases_dir = os.path.join(BASE_DIR, "releases")
+    shutil.copyfile(win_zip, os.path.join(releases_dir, "Ebb&Flow-Windows-x64.zip"))
+    print("✓ Windows App Build Complete & Synced to releases/!")
 
 def build_mac():
     print("\n==========================================")
@@ -359,14 +529,21 @@ def build_mac():
     dist_dir = os.path.join(app_dir, "dist")
     arm_folder = os.path.join(dist_dir, "Ebb&Flow-darwin-arm64")
     x64_folder = os.path.join(dist_dir, "Ebb&Flow-darwin-x64")
+    releases_dir = os.path.join(BASE_DIR, "releases")
     
     if os.path.exists(arm_folder):
-        zip_folder(arm_folder, os.path.join(dist_dir, "Ebb&Flow-Mac-AppleSilicon-arm64.zip"))
+        arm_zip = os.path.join(dist_dir, "Ebb&Flow-Mac-AppleSilicon-arm64.zip")
+        zip_folder(arm_folder, arm_zip)
+        shutil.copyfile(arm_zip, os.path.join(releases_dir, "Ebb&Flow-Mac-AppleSilicon-arm64.zip"))
     if os.path.exists(x64_folder):
-        zip_folder(x64_folder, os.path.join(dist_dir, "Ebb&Flow-Mac-Intel-x64.zip"))
-    print("✓ Mac App Build Complete!")
+        intel_zip = os.path.join(dist_dir, "Ebb&Flow-Mac-Intel-x64.zip")
+        zip_folder(x64_folder, intel_zip)
+        shutil.copyfile(intel_zip, os.path.join(releases_dir, "Ebb&Flow-Mac-Intel-x64.zip"))
+    print("✓ Mac App Build Complete & Synced to releases/!")
 
 if __name__ == "__main__":
+    os.makedirs(os.path.join(BASE_DIR, "releases"), exist_ok=True)
+    build_linux()
     build_windows()
     build_mac()
-    print("\n🎉 WINDOWS AND MAC BUILDS COMPLETED!")
+    print("\n🎉 ALL DESKTOP BUILDS COMPLETED & SYNCED TO RELEASES!")

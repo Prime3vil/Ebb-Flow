@@ -462,6 +462,45 @@ html, body {
   color: var(--bio-wave-low);
 }
 
+.drawer-header-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.drawer-icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(0, 242, 254, 0.1);
+  border: 1px solid rgba(0, 242, 254, 0.28);
+  color: var(--bio-cyan);
+  font-size: 17px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.drawer-icon-btn:active {
+  transform: scale(0.9);
+  background: rgba(0, 242, 254, 0.25);
+}
+
+.drawer-icon-btn.is-syncing .refresh-icon {
+  display: inline-block;
+  animation: spinRefresh 0.75s linear infinite;
+}
+
+@keyframes spinRefresh {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
 .drawer-close-btn {
   width: 32px;
   height: 32px;
@@ -861,6 +900,25 @@ html, body {
   overflow: hidden;
 }
 
+#searchModal,
+#savedModal {
+  justify-content: flex-start;
+  padding-top: max(16px, env(safe-area-inset-top) + 8px);
+}
+
+#searchModal .modal-sheet,
+#savedModal .modal-sheet {
+  margin: 0 16px auto;
+  max-height: calc(88vh - max(20px, env(safe-area-inset-top)));
+  transform: translateY(-16px);
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+}
+
+#searchModal.open .modal-sheet,
+#savedModal.open .modal-sheet {
+  transform: translateY(0);
+}
+
 .modal-header {
   display: flex;
   align-items: center;
@@ -922,7 +980,7 @@ html, body {
   flex-direction: column;
   gap: 8px;
   overflow-y: auto;
-  max-height: 52vh;
+  max-height: calc(85vh - 180px);
   padding-right: 4px;
 }
 

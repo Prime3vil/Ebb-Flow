@@ -56,7 +56,12 @@
         </span>
       </div>
 
-      <button class="drawer-close-btn" id="drawerMinimizeBtn" title="Minimize Drawer">✕</button>
+      <div class="drawer-header-btns">
+        <button class="drawer-icon-btn" id="drawerRefreshBtn" title="Refresh Live Station Data">
+          <span class="refresh-icon">↻</span>
+        </button>
+        <button class="drawer-close-btn" id="drawerMinimizeBtn" title="Minimize Drawer">✕</button>
+      </div>
     </div>
 
     <!-- COMPLETE 24-HOUR TIDE TABLE FOR THE DAY (Scrollable between all days of the month) -->
@@ -496,22 +501,30 @@
        * @param {boolean} autoOpenPopup Whether to automatically pop up the full telemetry screen
        */
       
-      // Cache for live station data from tides4fishing.com
-      const liveStationCache = new Map();
-
       // Native Bridge callback for live station telemetry from tides4fishing.com
       window.onStationLiveDataReceived = function(rawJson) {
+        const refreshBtn = document.getElementById("drawerRefreshBtn");
+        if (refreshBtn) refreshBtn.classList.remove("is-syncing");
+
         try {
           const data = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
           if (!data || data.error) {
             console.warn("Live station fetch error:", data ? data.error : "Unknown");
+            if (tideDaysSliderEl) {
+              tideDaysSliderEl.innerHTML = `
+                <div class="tide-loading-box" style="width:100%;">
+                  <span style="color:#ff6b6b; font-weight:700; font-size:12px;">⚠️ LIVE SYNC ERROR</span>
+                  <span style="font-size:11px; color:var(--text-secondary); margin-top:4px;">${escapeHtml(data ? data.error : "Could not reach tides4fishing.com")}</span>
+                  <button class="action-btn-main" id="retryFetchBtn" style="margin-top:10px; padding:6px 16px; font-size:11px;">Retry Refresh</button>
+                </div>
+              `;
+              const retryBtn = document.getElementById("retryFetchBtn");
+              if (retryBtn) retryBtn.addEventListener("click", () => refreshStationData(currentStation));
+            }
+            if (tideTableDateEl) tideTableDateEl.textContent = "SYNC FAILED";
             return;
           }
           if (currentStation) {
-            liveStationCache.set(currentStation.id, data);
-            try {
-              localStorage.setItem("live_tide_" + currentStation.id, JSON.stringify(data));
-            } catch (_) {}
             applyLiveStationData(data);
           }
         } catch (e) {
@@ -522,52 +535,39 @@
       function requestLiveStationData(station) {
         if (!station || !station.url) return;
 
-        // 1. Check memory cache
-        if (liveStationCache.has(station.id)) {
-          const cached = liveStationCache.get(station.id);
-          if (cached && cached.days && cached.days.length > 0) {
-            applyLiveStationData(cached);
-            return;
-          }
-        }
+        const refreshBtn = document.getElementById("drawerRefreshBtn");
+        if (refreshBtn) refreshBtn.classList.add("is-syncing");
 
-        // 2. Check localStorage persistent cache
-        try {
-          const stored = localStorage.getItem("live_tide_" + station.id);
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            if (parsed && ((parsed.days && parsed.days.length > 0) || (parsed.tides && parsed.tides.length > 0))) {
-              liveStationCache.set(station.id, parsed);
-              applyLiveStationData(parsed);
-              if (parsed.days && parsed.days.length > 0) {
-                return;
-              }
-            }
-          }
-        } catch (_) {}
-
-        // 3. Fetch via Native Android Bridge
+        // Fetch via Native Android Bridge
         if (window.EbbFlowBridge && typeof window.EbbFlowBridge.fetchStationLiveData === "function") {
           window.EbbFlowBridge.fetchStationLiveData(station.url, "window.onStationLiveDataReceived");
           return;
         }
 
-        // 4. Fallback browser fetch if bridge not available
-        fetch(station.url)
-          .then(r => r.text())
+        // Fallback browser fetch if bridge not available (Web / Desktop)
+        fetch(station.url, { cache: "no-store", headers: { "Cache-Control": "no-cache" } })
+          .then(r => {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.text();
+          })
           .then(html => {
             const data = parseTidesHtmlClientside(html);
-            if (data && data.tides && data.tides.length > 0) {
-              liveStationCache.set(station.id, data);
-              try {
-                localStorage.setItem("live_tide_" + station.id, JSON.stringify(data));
-              } catch (_) {}
+            if (data && data.days && data.days.length > 0) {
               if (currentStation && currentStation.id === station.id) {
                 applyLiveStationData(data);
               }
+            } else {
+              throw new Error("Could not parse tide data");
             }
           })
-          .catch(err => console.log("Web live fetch error:", err));
+          .catch(err => {
+            console.log("Web live fetch error:", err);
+            window.onStationLiveDataReceived({ error: err.message || "Network error" });
+          })
+          .finally(() => {
+            const btn = document.getElementById("drawerRefreshBtn");
+            if (btn) btn.classList.remove("is-syncing");
+          });
       }
 
       function parseTidesHtmlClientside(html) {
@@ -754,14 +754,17 @@
       }
 
       function showStationLoadingState(station) {
+        const refreshBtn = document.getElementById("drawerRefreshBtn");
+        if (refreshBtn) refreshBtn.classList.add("is-syncing");
         if (tideTableTitleTextEl) tideTableTitleTextEl.textContent = "TODAY'S TIDE TABLE";
-        if (tideTableDateEl) tideTableDateEl.textContent = "SYNCING...";
+        if (tideTableDateEl) tideTableDateEl.textContent = "SYNCING LIVE DATA...";
         if (tideDaysStripEl) tideDaysStripEl.innerHTML = "";
         if (tideDaysSliderEl) {
           tideDaysSliderEl.innerHTML = `
             <div class="tide-loading-box" style="width:100%;">
               <div class="tide-loading-spinner"></div>
-              <span>CONNECTING TO TIDES4FISHING.COM...</span>
+              <span>REFRESHING LIVE TIDE DATA...</span>
+              <span style="font-size:10px; color:var(--text-secondary); margin-top:4px;">Connecting to tides4fishing.com</span>
             </div>
           `;
         }
@@ -781,6 +784,8 @@
       }
 
       function applyLiveStationData(data) {
+        const refreshBtn = document.getElementById("drawerRefreshBtn");
+        if (refreshBtn) refreshBtn.classList.remove("is-syncing");
         if (!data || !currentStation) return;
         currentStationLiveData = data;
 
@@ -817,15 +822,49 @@
               tides: data.tides || []
             }];
 
+        // Preprocess processedTides and unit on each day
+        days.forEach(d => {
+          let unit = "FT";
+          const processed = [];
+          if (d.tides && d.tides.length > 0) {
+            d.tides.forEach(t => {
+              const minutes = parseTimeToMinutes(t.time);
+              const val = typeof t.val === "number" ? t.val : (parseFloat(t.height) || 0);
+              if (t.height) {
+                const uM = t.height.match(/[a-zA-Z]+/);
+                if (uM) unit = uM[0].toUpperCase();
+              }
+              processed.push({
+                type: t.type,
+                time: t.time,
+                height: t.height,
+                val: val,
+                minutes: minutes
+              });
+            });
+            processed.sort((a, b) => a.minutes - b.minutes);
+          }
+          d.processedTides = processed;
+          d.unit = unit;
+        });
+
         currentLiveDays = days;
 
-        let todayIdx = 0;
-        if (typeof data.todayIndex === "number" && data.todayIndex >= 0 && data.todayIndex < days.length) {
-          todayIdx = data.todayIndex;
-        } else {
-          const found = days.findIndex(d => d.isToday);
-          todayIdx = found >= 0 ? found : 0;
+        // Dynamic TODAY index based on client's actual calendar day
+        const clientDay = new Date().getDate();
+        let todayIdx = days.findIndex(d => d.day === clientDay);
+        if (todayIdx < 0) {
+          if (typeof data.todayIndex === "number" && data.todayIndex >= 0 && data.todayIndex < days.length) {
+            todayIdx = data.todayIndex;
+          } else {
+            const found = days.findIndex(d => d.isToday);
+            todayIdx = found >= 0 ? found : 0;
+          }
         }
+
+        days.forEach((d, idx) => {
+          d.isToday = (idx === todayIdx);
+        });
 
         currentActiveDayIndex = todayIdx;
 
@@ -859,14 +898,9 @@
           const listWrap = document.createElement("div");
           listWrap.className = "tide-table-list";
 
-          if (d.tides && d.tides.length > 0) {
+          if (d.processedTides && d.processedTides.length > 0) {
             let nextFound = false;
-            const sortedTides = [...d.tides].map(t => ({
-              ...t,
-              minutes: parseTimeToMinutes(t.time)
-            })).sort((a, b) => a.minutes - b.minutes);
-
-            sortedTides.forEach(t => {
+            d.processedTides.forEach(t => {
               let status = "PAST";
               if (d.isToday) {
                 if (t.minutes > currentMinutes) {
@@ -990,49 +1024,33 @@
         }
 
         // Waveform & High/Low Extrema
-        if (d.tides && d.tides.length > 0) {
+        if (d.processedTides && d.processedTides.length > 0) {
           let minVal = 999;
           let maxVal = -999;
-          let unit = "FT";
-          const processedTides = [];
-          for (const t of d.tides) {
-            const minutes = parseTimeToMinutes(t.time);
-            const val = typeof t.val === "number" ? t.val : (parseFloat(t.height) || 0);
-            if (val < minVal) minVal = val;
-            if (val > maxVal) maxVal = val;
-            if (t.height) {
-              const uM = t.height.match(/[a-zA-Z]+/);
-              if (uM) unit = uM[0].toUpperCase();
-            }
-            processedTides.push({
-              type: t.type,
-              time: t.time,
-              height: t.height,
-              val: val,
-              minutes: minutes
-            });
+          for (const t of d.processedTides) {
+            if (t.val < minVal) minVal = t.val;
+            if (t.val > maxVal) maxVal = t.val;
           }
-          processedTides.sort((a, b) => a.minutes - b.minutes);
 
           if (maxVal > -900 && minVal < 900) {
             const range = (maxVal - minVal).toFixed(1);
-            tidalRangeDisplayEl.textContent = `${range} ${unit}`;
+            tidalRangeDisplayEl.textContent = `${range} ${d.unit || 'FT'}`;
           }
 
           // Build waveform samples for this day
-          buildWaveformFromTides(processedTides, minVal, maxVal);
+          buildWaveformFromTides(d.processedTides, minVal, maxVal);
 
           const now = new Date();
           const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
           if (d.isToday) {
             // Update real-time water level & tendency for today
-            updateWaterLevelFromRealTides(processedTides, currentMinutes, unit);
+            updateWaterLevelFromRealTides(d.processedTides, currentMinutes, d.unit || "FT");
 
             // Update Next High / Low countdowns
             let upcomingHighObj = null;
             let upcomingLowObj = null;
-            for (const t of processedTides) {
+            for (const t of d.processedTides) {
               if (t.minutes > currentMinutes) {
                 if (t.type.includes("HIGH") && !upcomingHighObj) upcomingHighObj = t;
                 if (t.type.includes("LOW") && !upcomingLowObj) upcomingLowObj = t;
@@ -1061,12 +1079,12 @@
             }
           } else {
             // Non-today date: show the day's peak High and lowest Low
-            const highs = processedTides.filter(t => t.type.includes("HIGH"));
-            const lows = processedTides.filter(t => t.type.includes("LOW"));
+            const highs = d.processedTides.filter(t => t.type.includes("HIGH"));
+            const lows = d.processedTides.filter(t => t.type.includes("LOW"));
             if (highs.length > 0) {
               const bestHigh = highs.reduce((prev, curr) => curr.val > prev.val ? curr : prev, highs[0]);
               nextHighTimeEl.textContent = `${bestHigh.time.toUpperCase()} (${bestHigh.height.toUpperCase()})`;
-              nextHighCountdownEl.textContent = `${d.dayName.toUpperCase()} PEAK`;
+              nextHighCountdownEl.textContent = `${(d.dayName || 'DAY').toUpperCase()} PEAK`;
             } else {
               nextHighTimeEl.textContent = "--:--";
               nextHighCountdownEl.textContent = "--";
@@ -1074,7 +1092,7 @@
             if (lows.length > 0) {
               const bestLow = lows.reduce((prev, curr) => curr.val < prev.val ? curr : prev, lows[0]);
               nextLowTimeEl.textContent = `${bestLow.time.toUpperCase()} (${bestLow.height.toUpperCase()})`;
-              nextLowCountdownEl.textContent = `${d.dayName.toUpperCase()} TROUGH`;
+              nextLowCountdownEl.textContent = `${(d.dayName || 'DAY').toUpperCase()} TROUGH`;
             } else {
               nextLowTimeEl.textContent = "--:--";
               nextLowCountdownEl.textContent = "--";
@@ -1155,6 +1173,75 @@
         }
       }
 
+      function updateLiveTick(now = new Date()) {
+        if (!currentLiveDays || currentLiveDays.length === 0) return;
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+        const currentActiveDay = currentLiveDays[currentActiveDayIndex];
+        if (!currentActiveDay) return;
+
+        if (currentActiveDay.isToday && currentActiveDay.processedTides && currentActiveDay.processedTides.length > 0) {
+          const unit = currentActiveDay.unit || "FT";
+          updateWaterLevelFromRealTides(currentActiveDay.processedTides, currentMinutes, unit);
+
+          let upcomingHighObj = null;
+          let upcomingLowObj = null;
+          for (const t of currentActiveDay.processedTides) {
+            if (t.minutes > currentMinutes) {
+              if (t.type.includes("HIGH") && !upcomingHighObj) upcomingHighObj = t;
+              if (t.type.includes("LOW") && !upcomingLowObj) upcomingLowObj = t;
+            }
+          }
+
+          if (upcomingHighObj) {
+            const diffMin = upcomingHighObj.minutes - currentMinutes;
+            const diffH = Math.floor(diffMin / 60);
+            const diffM = diffMin % 60;
+            nextHighTimeEl.textContent = `${upcomingHighObj.time.toUpperCase()} (${upcomingHighObj.height.toUpperCase()})`;
+            nextHighCountdownEl.textContent = `${String(diffH).padStart(2,'0')}h ${String(diffM).padStart(2,'0')}m`;
+          } else {
+            nextHighTimeEl.textContent = "--:--";
+            nextHighCountdownEl.textContent = "Cycle Complete";
+          }
+
+          if (upcomingLowObj) {
+            const diffMin = upcomingLowObj.minutes - currentMinutes;
+            const diffH = Math.floor(diffMin / 60);
+            const diffM = diffMin % 60;
+            nextLowTimeEl.textContent = `${upcomingLowObj.time.toUpperCase()} (${upcomingLowObj.height.toUpperCase()})`;
+            nextLowCountdownEl.textContent = `${String(diffH).padStart(2,'0')}h ${String(diffM).padStart(2,'0')}m`;
+          } else {
+            nextLowTimeEl.textContent = "--:--";
+            nextLowCountdownEl.textContent = "Cycle Complete";
+          }
+
+          if (tideDaysSliderEl && tideDaysSliderEl.children[currentActiveDayIndex]) {
+            const activeSlide = tideDaysSliderEl.children[currentActiveDayIndex];
+            const rows = activeSlide.querySelectorAll(".tide-table-row");
+            let nextFound = false;
+            currentActiveDay.processedTides.forEach((t, i) => {
+              const row = rows[i];
+              if (!row) return;
+              let status = "PAST";
+              if (t.minutes > currentMinutes) {
+                if (!nextFound) {
+                  status = "NEXT";
+                  nextFound = true;
+                } else {
+                  status = "UPCOMING";
+                }
+              }
+              row.classList.toggle("is-next", status === "NEXT");
+              const badge = row.querySelector(".tide-status-badge");
+              if (badge) {
+                badge.className = `tide-status-badge ${status.toLowerCase()}`;
+                badge.textContent = status;
+              }
+            });
+          }
+        }
+      }
+
       function buildWaveformFromTides(tides, minVal, maxVal) {
         currentWaveExtrema = tides;
         currentWaveSamples = [];
@@ -1213,30 +1300,20 @@
         updateStationTelemetry();
         updateActionButtonsState();
 
-        // Check if cached data exists, otherwise show loading state
-        const cached = liveStationCache.get(station.id);
-        if (cached) {
-          applyLiveStationData(cached);
-        } else {
-          try {
-            const stored = localStorage.getItem("live_tide_" + station.id);
-            if (stored) {
-              const parsed = JSON.parse(stored);
-              applyLiveStationData(parsed);
-            } else {
-              showStationLoadingState(station);
-            }
-          } catch (_) {
-            showStationLoadingState(station);
-          }
-        }
-
+        // ALWAYS refresh every single time a location is opened, even if opened previously!
+        showStationLoadingState(station);
         requestLiveStationData(station);
 
         // AUTOMATICALLY OPEN POP UP SCREEN WITH FULL TIDE TABLE ON TAP!
         if (autoOpenPopup) {
           telemetryDrawer.classList.add("expanded");
         }
+      }
+
+      function refreshStationData(station = currentStation) {
+        if (!station) return;
+        showStationLoadingState(station);
+        requestLiveStationData(station);
       }
 
       /**
@@ -1269,8 +1346,12 @@
           // Check vertical swipe with minimum threshold (35px) and dominance over horizontal
           if (Math.abs(deltaY) > 35 && Math.abs(deltaY) > deltaX) {
             if (deltaY < 0) {
-              // SWIPE UP -> OPEN POPUP WINDOW!
+              // SWIPE UP -> OPEN POPUP WINDOW & REFRESH!
+              const wasExpanded = telemetryDrawer.classList.contains("expanded");
               telemetryDrawer.classList.add("expanded");
+              if (!wasExpanded && currentStation) {
+                refreshStationData(currentStation);
+              }
             } else {
               // SWIPE DOWN -> COLLAPSE
               telemetryDrawer.classList.remove("expanded");
@@ -1284,17 +1365,38 @@
         headerSummary.addEventListener("touchstart", onTouchStart, { passive: true });
         headerSummary.addEventListener("touchend", onTouchEnd, { passive: true });
 
-        // Tap handle or header to expand when collapsed
+        // Tap handle or header to expand when collapsed -> REFRESH!
         handleWrap.addEventListener("click", function() {
+          const wasExpanded = telemetryDrawer.classList.contains("expanded");
           telemetryDrawer.classList.toggle("expanded");
+          if (!wasExpanded && currentStation) {
+            refreshStationData(currentStation);
+          }
         });
 
         headerSummary.addEventListener("click", function(e) {
-          if (e.target.closest("#drawerMinimizeBtn")) return;
+          if (e.target.closest("#drawerMinimizeBtn") || e.target.closest("#drawerRefreshBtn")) return;
           if (!telemetryDrawer.classList.contains("expanded")) {
             telemetryDrawer.classList.add("expanded");
+            if (currentStation) {
+              refreshStationData(currentStation);
+            }
           }
         });
+
+        // Dedicated Refresh Button
+        const drawerRefreshBtn = document.getElementById("drawerRefreshBtn");
+        if (drawerRefreshBtn) {
+          drawerRefreshBtn.addEventListener("click", function(e) {
+            e.stopPropagation();
+            if (currentStation) {
+              if (window.EbbFlowBridge && typeof window.EbbFlowBridge.triggerHaptic === "function") {
+                window.EbbFlowBridge.triggerHaptic();
+              }
+              refreshStationData(currentStation);
+            }
+          });
+        }
 
         // Minimize button
         drawerMinimizeBtn.addEventListener("click", function(e) {
@@ -1718,6 +1820,7 @@
           const now = new Date();
           realtimeClockEl.textContent = now.toLocaleTimeString();
           renderWaveform(now);
+          updateLiveTick(now);
         }, 1000);
       });
 

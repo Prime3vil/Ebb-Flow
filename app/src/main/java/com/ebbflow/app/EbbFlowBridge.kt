@@ -26,7 +26,6 @@ class EbbFlowBridge(private val context: Context, private val webView: WebView) 
 
     private val prefs: SharedPreferences = context.getSharedPreferences("ebbflow_prefs", Context.MODE_PRIVATE)
     private val executor = Executors.newCachedThreadPool()
-    private val cache = HashMap<String, String>()
 
     @JavascriptInterface
     fun saveLastLocation(json: String) {
@@ -79,19 +78,16 @@ class EbbFlowBridge(private val context: Context, private val webView: WebView) 
 
     @JavascriptInterface
     fun fetchStationLiveData(stationUrl: String, callbackMethod: String) {
-        val cached = cache[stationUrl]
-        if (cached != null) {
-            postToWeb(callbackMethod, cached)
-            return
-        }
-
         executor.execute {
             try {
                 val fullUrl = if (stationUrl.startsWith("http")) stationUrl else "https://tides4fishing.com$stationUrl"
                 val connection = (URL(fullUrl).openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
-                    connectTimeout = 8000
-                    readTimeout = 8000
+                    connectTimeout = 9000
+                    readTimeout = 9000
+                    useCaches = false
+                    setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
+                    setRequestProperty("Pragma", "no-cache")
                     setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
                 }
 
@@ -100,7 +96,6 @@ class EbbFlowBridge(private val context: Context, private val webView: WebView) 
                 reader.close()
 
                 val parsedJson = parseTidesHtml(html)
-                cache[stationUrl] = parsedJson
                 postToWeb(callbackMethod, parsedJson)
             } catch (e: Exception) {
                 val errorObj = JSONObject().apply {
@@ -113,8 +108,31 @@ class EbbFlowBridge(private val context: Context, private val webView: WebView) 
 
     private fun postToWeb(callbackMethod: String, jsonPayload: String) {
         webView.post {
-            val escaped = jsonPayload.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
-            webView.evaluateJavascript("$callbackMethod('$escaped')", null)
+            try {
+                val b64 = android.util.Base64.encodeToString(jsonPayload.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+                val js = """
+                    (function() {
+                        try {
+                            var b64Str = '$b64';
+                            var binary = window.atob(b64Str);
+                            var bytes = new Uint8Array(binary.length);
+                            for (var i = 0; i < binary.length; i++) {
+                                bytes[i] = binary.charCodeAt(i);
+                            }
+                            var jsonStr = new TextDecoder('utf-8').decode(bytes);
+                            if (typeof $callbackMethod === 'function') {
+                                $callbackMethod(jsonStr);
+                            }
+                        } catch(e) {
+                            console.error('postToWeb decode error:', e);
+                        }
+                    })();
+                """.trimIndent()
+                webView.evaluateJavascript(js, null)
+            } catch (e: Exception) {
+                val escaped = jsonPayload.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
+                webView.evaluateJavascript("if (typeof $callbackMethod === 'function') { $callbackMethod('$escaped'); }", null)
+            }
         }
     }
 
@@ -134,6 +152,11 @@ class EbbFlowBridge(private val context: Context, private val webView: WebView) 
             val yr = todayMatcher.group(4) ?: ""
             todayDayNum = dNum.toIntOrNull() ?: 0
             todayDateStr = "$dName, $mName $dNum, $yr"
+        }
+        val calendar = Calendar.getInstance()
+        val calendarDay = calendar.get(Calendar.DAY_OF_MONTH)
+        if (todayDayNum == 0) {
+            todayDayNum = calendarDay
         }
 
         // Extract month prefix if available (e.g. 2026-09)
@@ -279,6 +302,7 @@ class EbbFlowBridge(private val context: Context, private val webView: WebView) 
 
         root.put("days", daysArray)
         root.put("todayIndex", todayIndex)
+        root.put("fetchTimestamp", System.currentTimeMillis())
 
         // Fallback if today was not matched
         if (!root.has("tides") && daysArray.length() > 0) {

@@ -51,3 +51,7 @@ env/
 .env.*.local
 *.pem
 *.key
+
+# Signing keys & Keystores
+*.keystore
+*.jks
