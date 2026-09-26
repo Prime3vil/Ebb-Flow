@@ -398,59 +398,34 @@
 
         map.addLayer(clusterGroup);
 
-        populateStations();
+        // 1. Immediately restore location and set map view (triggers instant tile loading & active pin)
         restoreInitialLocation();
         setupDrawerGestures();
         setupSliderScrollListener();
+
+        // 2. Defer heavy station population to let the map viewport and tiles render immediately
+        requestAnimationFrame(() => {
+          setTimeout(populateStations, 40);
+        });
       }
 
-      /**
-       * Populate all stations into MarkerCluster
-       */
-      function populateStations() {
-        if (!window.TIDES_STATIONS || !Array.isArray(window.TIDES_STATIONS)) return;
-
-        const total = window.TIDES_STATIONS.length;
-        document.getElementById("stationCountDisplay").textContent = `${total.toLocaleString()} STATIONS`;
-
-        const markers = [];
-        for (let i = 0; i < total; i++) {
-          const raw = window.TIDES_STATIONS[i];
-          const station = {
-            id: raw[0],
-            name: raw[1],
-            region: raw[2],
-            country: raw[3],
-            continent: raw[4],
-            lat: raw[5],
-            lng: raw[6],
-            url: `https://tides4fishing.com${raw[7]}`
-          };
-
-          const isHome = QuickAccessManager.isHomeLocation(station.id);
-          const icon = createStationMarkerIcon(station, isHome, false);
-
-          const marker = L.marker([station.lat, station.lng], {
-            icon: icon,
-            riseOnHover: true
-          });
-
-          marker.stationData = station;
-          marker.on("click", function() {
-            // AUTOMATICALLY POP UP FULL TELEMETRY WINDOW ON TAP!
-            selectStation(station, true, true);
-          });
-
-          stationMarkerMap.set(station.id, marker);
-          markers.push(marker);
-        }
-
-        clusterGroup.addLayers(markers);
-      }
+      const sharedDefaultMarkerIcon = L.divIcon({
+        className: "custom-station-marker",
+        html: `
+          <div class="tide-marker-container">
+            <div class="tide-marker-pin"></div>
+          </div>
+        `,
+        iconSize: [44, 44],
+        iconAnchor: [22, 22]
+      });
 
       function createStationMarkerIcon(station, isHome = false, isActive = false) {
+        if (!isHome && !isActive) {
+          return sharedDefaultMarkerIcon;
+        }
         const homeTag = isHome ? `<span class="home-star">★</span>` : "";
-        const displayName = QuickAccessManager.getDisplayName(station);
+        const displayName = isActive ? QuickAccessManager.getDisplayName(station) : "";
 
         return L.divIcon({
           className: "custom-station-marker",
@@ -464,6 +439,78 @@
           iconSize: [44, 44],
           iconAnchor: [22, 22]
         });
+      }
+
+      /**
+       * Populate all stations into MarkerCluster (progressive & non-blocking)
+       */
+      function populateStations() {
+        if (!window.TIDES_STATIONS || !Array.isArray(window.TIDES_STATIONS)) return;
+
+        const total = window.TIDES_STATIONS.length;
+        document.getElementById("stationCountDisplay").textContent = `${total.toLocaleString()} STATIONS`;
+
+        // Cache home station ID once to avoid 32,013 bridge / localStorage lookups
+        const homeStation = QuickAccessManager.getHomeLocation();
+        const homeId = homeStation ? homeStation.id : null;
+
+        const BATCH_SIZE = 4000;
+        let index = 0;
+        const allMarkers = [];
+
+        function processBatch() {
+          const limit = Math.min(index + BATCH_SIZE, total);
+          for (; index < limit; index++) {
+            const raw = window.TIDES_STATIONS[index];
+            const stId = raw[0];
+            const station = {
+              id: stId,
+              name: raw[1],
+              region: raw[2],
+              country: raw[3],
+              continent: raw[4],
+              lat: raw[5],
+              lng: raw[6],
+              url: `https://tides4fishing.com${raw[7]}`
+            };
+
+            const isHome = (stId === homeId);
+            const isActive = currentStation && (stId === currentStation.id);
+            const icon = (isHome || isActive) ? createStationMarkerIcon(station, isHome, isActive) : sharedDefaultMarkerIcon;
+
+            const marker = L.marker([station.lat, station.lng], {
+              icon: icon,
+              riseOnHover: true
+            });
+
+            marker.stationData = station;
+            marker.on("click", function() {
+              // AUTOMATICALLY POP UP FULL TELEMETRY WINDOW ON TAP!
+              selectStation(station, true, true);
+            });
+
+            stationMarkerMap.set(stId, marker);
+
+            if (isActive) {
+              // Clean up temporary standalone activeMarker if one was added during startup
+              if (activeMarker && activeMarker._isStandalone && map.hasLayer(activeMarker)) {
+                map.removeLayer(activeMarker);
+              }
+              activeMarker = marker;
+            }
+
+            allMarkers.push(marker);
+          }
+
+          if (index < total) {
+            setTimeout(processBatch, 4);
+          } else {
+            // Once all markers are built, add them into clusterGroup
+            clusterGroup.addLayers(allMarkers);
+          }
+        }
+
+        processBatch();
       }
 
       function restoreInitialLocation() {
@@ -1279,8 +1326,13 @@
 
         if (activeMarker) {
           const oldStation = activeMarker.stationData;
-          const wasHome = QuickAccessManager.isHomeLocation(oldStation.id);
-          activeMarker.setIcon(createStationMarkerIcon(oldStation, wasHome, false));
+          if (oldStation) {
+            const wasHome = QuickAccessManager.isHomeLocation(oldStation.id);
+            activeMarker.setIcon(createStationMarkerIcon(oldStation, wasHome, false));
+          }
+          if (activeMarker._isStandalone && map.hasLayer(activeMarker)) {
+            map.removeLayer(activeMarker);
+          }
         }
 
         const newMarker = stationMarkerMap.get(station.id);
@@ -1288,6 +1340,19 @@
           const isHome = QuickAccessManager.isHomeLocation(station.id);
           newMarker.setIcon(createStationMarkerIcon(station, isHome, true));
           activeMarker = newMarker;
+        } else {
+          // If stationMarkerMap is not populated yet, create a dedicated active marker directly on map
+          const isHome = QuickAccessManager.isHomeLocation(station.id);
+          activeMarker = L.marker([station.lat, station.lng], {
+            icon: createStationMarkerIcon(station, isHome, true),
+            riseOnHover: true,
+            zIndexOffset: 1000
+          }).addTo(map);
+          activeMarker.stationData = station;
+          activeMarker._isStandalone = true;
+          activeMarker.on("click", function() {
+            selectStation(station, true, true);
+          });
         }
 
         if (animateFly) {
