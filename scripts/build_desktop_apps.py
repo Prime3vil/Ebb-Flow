@@ -14,7 +14,7 @@ ICON_ICNS = os.path.join(BASE_DIR, "scripts", "icon.icns")
 PKG_JSON = {
     "name": "ebbflow",
     "productName": "Ebb&Flow",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "description": "Ebb&Flow - Global Oceanic Tide Reconnaissance & Solunar Ephemeris",
     "main": "main.js",
     "author": "Ebb&Flow Dev Team",

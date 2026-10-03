@@ -651,10 +651,6 @@
           }
         }
 
-        // Detect month prefix if present: Day('2026-09-14') -> 2026-09
-        const mpMatch = html.match(/Day\('(\d{4}-\d{2})-\d+'\)/);
-        const monthPrefix = mpMatch ? mpMatch[1] : "";
-
         // 2. Iterate all rows in tabla_mareas_fila
         const rowRegex = /<tr([^>]*)>([\s\S]*?)<\/tr>/gi;
         let rowMatch;
@@ -670,16 +666,10 @@
           const dayNum = parseInt(numM[1], 10);
           if (isNaN(dayNum)) continue;
 
-          // Filter out other months if prefix present
-          const clickM = trAttrs.match(/onclick="Day\('([^']+)'\);"/);
-          if (clickM && monthPrefix && !clickM[1].startsWith(monthPrefix)) {
-            continue;
-          }
-
           if (seenDays.has(dayNum)) continue;
           seenDays.add(dayNum);
 
-          const isToday = (dayNum === todayDayNum) || trAttrs.includes("fondo3") || rowHtml.includes("fondo3");
+          const isToday = trAttrs.includes("fondo3") || rowHtml.includes("fondo3") || (dayNum === todayDayNum);
           if (isToday) {
             result.todayIndex = result.days.length;
           }
@@ -897,15 +887,17 @@
 
         currentLiveDays = days;
 
-        // Dynamic TODAY index based on client's actual calendar day
-        const clientDay = new Date().getDate();
-        let todayIdx = days.findIndex(d => d.day === clientDay);
+        // Dynamic TODAY index: prioritize server-marked isToday (station timezone accurate), then client calendar day
+        let todayIdx = days.findIndex(d => d.isToday);
+        if (todayIdx < 0) {
+          const clientDay = new Date().getDate();
+          todayIdx = days.findIndex(d => d.day === clientDay);
+        }
         if (todayIdx < 0) {
           if (typeof data.todayIndex === "number" && data.todayIndex >= 0 && data.todayIndex < days.length) {
             todayIdx = data.todayIndex;
           } else {
-            const found = days.findIndex(d => d.isToday);
-            todayIdx = found >= 0 ? found : 0;
+            todayIdx = 0;
           }
         }
 

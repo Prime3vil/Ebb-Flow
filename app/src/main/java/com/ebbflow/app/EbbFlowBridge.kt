@@ -159,11 +159,6 @@ class EbbFlowBridge(private val context: Context, private val webView: WebView) 
             todayDayNum = calendarDay
         }
 
-        // Extract month prefix if available (e.g. 2026-09)
-        val monthPrefixPattern = Pattern.compile("Day\\('(\\d{4}-\\d{2})-\\d+'\\)")
-        val mpMatcher = monthPrefixPattern.matcher(html)
-        val monthPrefix = if (mpMatcher.find()) mpMatcher.group(1) ?: "" else ""
-
         // 2. Iterate all rows in tabla_mareas_fila
         val dayPattern = Pattern.compile("<tr([^>]*)>(.*?)</tr>", Pattern.DOTALL)
         val matcher = dayPattern.matcher(html)
@@ -181,14 +176,6 @@ class EbbFlowBridge(private val context: Context, private val webView: WebView) 
             if (!numMatcher.find()) continue
             val dayNum = numMatcher.group(1)?.toIntOrNull() ?: continue
 
-            // Filter out other months if monthPrefix exists
-            val dayClickPattern = Pattern.compile("onclick=\"Day\\('([^']+)'\\);\"")
-            val clickMatcher = dayClickPattern.matcher(trAttrs)
-            if (clickMatcher.find() && monthPrefix.isNotEmpty()) {
-                val dVal = clickMatcher.group(1) ?: ""
-                if (!dVal.startsWith(monthPrefix)) continue
-            }
-
             if (seenDays.contains(dayNum)) continue
             seenDays.add(dayNum)
 
@@ -204,6 +191,10 @@ class EbbFlowBridge(private val context: Context, private val webView: WebView) 
             val titlePattern = Pattern.compile("title=\"([^\"]+)\"")
             val titleMatcher = titlePattern.matcher(trAttrs)
             val dateTitle = if (titleMatcher.find()) titleMatcher.group(1)?.trim() ?: "" else "$dayName, Day $dayNum"
+
+            if (isToday && todayDateStr.isEmpty()) {
+                todayDateStr = dateTitle
+            }
 
             val dayObj = JSONObject()
             dayObj.put("day", dayNum)
@@ -306,14 +297,15 @@ class EbbFlowBridge(private val context: Context, private val webView: WebView) 
 
         // Fallback if today was not matched
         if (!root.has("tides") && daysArray.length() > 0) {
-            val firstDay = daysArray.getJSONObject(0)
-            root.put("day", firstDay.optInt("day"))
-            root.put("dateStr", firstDay.optString("dateTitle"))
-            root.put("sunrise", firstDay.optString("sunrise"))
-            root.put("sunset", firstDay.optString("sunset"))
-            root.put("coef", firstDay.optInt("coef"))
-            root.put("solunar", firstDay.optString("solunar"))
-            root.put("tides", firstDay.optJSONArray("tides"))
+            val idx = if (todayIndex >= 0 && todayIndex < daysArray.length()) todayIndex else 0
+            val activeDay = daysArray.getJSONObject(idx)
+            root.put("day", activeDay.optInt("day"))
+            root.put("dateStr", activeDay.optString("dateTitle"))
+            root.put("sunrise", activeDay.optString("sunrise"))
+            root.put("sunset", activeDay.optString("sunset"))
+            root.put("coef", activeDay.optInt("coef"))
+            root.put("solunar", activeDay.optString("solunar"))
+            root.put("tides", activeDay.optJSONArray("tides"))
         }
 
         // 3. Lunar Phase, Age, Illumination
